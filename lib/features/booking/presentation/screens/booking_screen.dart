@@ -116,7 +116,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     final weeklyAsync = ref.watch(upcomingReservationsProvider);
     final weeklyUsed = weeklyAsync.valueOrNull?.length ?? 0;
     final weeklyFull = weeklyUsed >= AppConstants.weeklyReservationLimit;
-    final dailyTaken = occupied.isNotEmpty; // simplificación; la lógica real viene del trigger
 
     return Scaffold(
       backgroundColor: AppColors.background,
