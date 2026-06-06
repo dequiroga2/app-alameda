@@ -220,11 +220,20 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
   }
 
   Future<void> _deleteEntry(String id) async {
-    await Supabase.instance.client
-        .from(AppConstants.tableLotteryEntries)
-        .delete()
-        .eq('id', id);
-    ref.invalidate(myLotteryEntriesProvider);
+    try {
+      await Supabase.instance.client
+          .from(AppConstants.tableLotteryEntries)
+          .delete()
+          .eq('id', id);
+      ref.invalidate(myLotteryEntriesProvider);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No se pudo eliminar el horario. Intenta de nuevo.'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
   }
 
   // ── Build ───────────────────────────────────────────────────────────────

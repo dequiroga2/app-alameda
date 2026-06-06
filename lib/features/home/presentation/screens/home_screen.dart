@@ -181,11 +181,21 @@ class HomeScreen extends ConsumerWidget {
     );
 
     if (confirm == true) {
-      await Supabase.instance.client
-          .from(AppConstants.tableReservations)
-          .update({'status': AppConstants.statusCancelled})
-          .eq('id', r['id'] as String);
-      ref.invalidate(upcomingReservationsProvider);
+      try {
+        await Supabase.instance.client
+            .from(AppConstants.tableReservations)
+            .update({'status': AppConstants.statusCancelled})
+            .eq('id', r['id'] as String);
+        ref.invalidate(upcomingReservationsProvider);
+        ref.invalidate(weeklyReservationCountProvider);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo cancelar. Intenta de nuevo.'),
+            backgroundColor: Colors.red,
+          ));
+        }
+      }
     }
   }
 
