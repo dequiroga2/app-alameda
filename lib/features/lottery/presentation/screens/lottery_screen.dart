@@ -156,7 +156,15 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
 
     setState(() => _mode = _Mode.drawLoading);
 
-    // Ejecutar el sorteo — en debug mostramos el error real si falla
+    // 1. Resetear estado del sorteo anterior (idempotente para re-testing)
+    try {
+      await Supabase.instance.client.rpc(
+        'reset_lottery_draw_debug',
+        params: {'p_week_start': lotteryFmtDate(weekStart)},
+      );
+    } catch (_) {}
+
+    // 2. Ejecutar el sorteo — en debug mostramos el error real si falla
     try {
       await Supabase.instance.client.rpc(
         'run_lottery_draw',

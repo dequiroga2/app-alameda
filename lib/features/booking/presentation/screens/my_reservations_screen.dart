@@ -21,7 +21,14 @@ class MyReservationsScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: CustomScrollView(
+      body: RefreshIndicator(
+        color: AppColors.accentStrong,
+        onRefresh: () async {
+          ref.invalidate(upcomingReservationsProvider);
+          ref.invalidate(weeklyReservationCountProvider);
+          await ref.read(upcomingReservationsProvider.future);
+        },
+        child: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
             child: WaveHeader(
@@ -82,6 +89,7 @@ class MyReservationsScreen extends ConsumerWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }
