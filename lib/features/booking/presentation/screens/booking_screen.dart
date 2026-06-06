@@ -34,9 +34,16 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
 
   List<DateTime> get _bookableDays {
     final today = DateTime.now();
-    return List.generate(AppConstants.bookingWindowDays, (i) {
-      return DateTime(today.year, today.month, today.day + i);
-    });
+    final todayDate = DateTime(today.year, today.month, today.day);
+    // Sáb–Dom: hasta el domingo de la PRÓXIMA semana (sorteos ya publicados)
+    // Lun–Vie: solo hasta el domingo de ESTA semana
+    final daysUntilEnd = today.weekday >= DateTime.saturday
+        ? DateTime.sunday - today.weekday + 7  // sáb=8 días, dom=7 días
+        : DateTime.sunday - today.weekday;     // lun=6, mar=5 … vie=2
+    return List.generate(
+      daysUntilEnd + 1,
+      (i) => todayDate.add(Duration(days: i)),
+    );
   }
 
   List<int> get _hours => List.generate(

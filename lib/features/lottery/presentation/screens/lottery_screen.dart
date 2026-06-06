@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -143,6 +144,54 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
     }
   }
 
+  /// Solo disponible en debug — simula el sorteo del viernes desde hoy
+  Future<void> _simulateDraw() async {
+    final weekStart = ref.read(lotteryWeekStartProvider);
+    final prefs = await SharedPreferences.getInstance();
+    // Borra el flag de "ya visto" para que la animación vuelva a correr
+    await prefs.remove('lottery_reveal_seen_${lotteryFmtDate(weekStart)}');
+
+    setState(() => _mode = _Mode.drawLoading);
+    try {
+      await Supabase.instance.client.rpc(
+        'run_lottery_draw',
+        params: {'p_week_start': lotteryFmtDate(weekStart)},
+      );
+    } catch (_) {}
+
+    await _loadEntries();
+
+    if (_entries.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Agrega al menos un horario antes de simular el sorteo.'),
+        ));
+        setState(() => _mode = _Mode.open);
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    for (int c = 3; c >= 1; c--) {
+      if (!mounted) return;
+      setState(() { _mode = _Mode.countdown; _countdownValue = c; });
+      await Future.delayed(const Duration(milliseconds: 900));
+    }
+
+    if (!mounted) return;
+    setState(() { _mode = _Mode.revealing; _revealedCount = 0; });
+    for (int i = 0; i < _entries.length; i++) {
+      await Future.delayed(const Duration(milliseconds: 750));
+      if (!mounted) return;
+      setState(() => _revealedCount = i + 1);
+    }
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    setState(() => _mode = _Mode.resultsStatic);
+    await prefs.setBool('lottery_reveal_seen_${lotteryFmtDate(weekStart)}', true);
+  }
+
   Future<void> _deleteEntry(String id) async {
     await Supabase.instance.client
         .from(AppConstants.tableLotteryEntries)
@@ -209,6 +258,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
           weekStart: weekStart,
           onAdd: _addEntry,
           onDelete: _deleteEntry,
+          onSimulate: kDebugMode ? _simulateDraw : null,
         );
       case _Mode.drawLoading:
         return const _DrawLoadingBody();
@@ -263,11 +313,13 @@ class _OpenPhaseBody extends ConsumerWidget {
     required this.weekStart,
     required this.onAdd,
     required this.onDelete,
+    this.onSimulate,
   });
 
   final DateTime weekStart;
   final Future<void> Function(String date, int hour) onAdd;
   final Future<void> Function(String id) onDelete;
+  final VoidCallback? onSimulate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -276,6 +328,34 @@ class _OpenPhaseBody extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // ── Botón de prueba (solo debug) ─────────────────────────────
+        if (onSimulate != null) ...[
+          GestureDetector(
+            onTap: onSimulate,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.warningTint,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.warning, width: 1.5),
+              ),
+              child: Row(children: [
+                const Icon(Icons.science_rounded, color: AppColors.warning, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '🧪 DEBUG — Simular sorteo del viernes',
+                    style: AppTextStyles.labelSm.copyWith(color: AppColors.warning),
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.warning, size: 18),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
         // Info banner
         AppCard(
           padding: const EdgeInsets.all(16),
