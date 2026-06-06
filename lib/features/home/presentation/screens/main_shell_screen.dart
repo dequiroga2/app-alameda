@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/providers/shell_tab_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../booking/presentation/screens/my_reservations_screen.dart';
+import '../../../lottery/presentation/screens/lottery_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
 import 'home_screen.dart';
 
@@ -15,14 +15,14 @@ class MainShellScreen extends ConsumerWidget {
 
   static const _tabs = [
     _TabItem(icon: Icons.home_rounded, label: 'Inicio'),
-    _TabItem(icon: Icons.calendar_today_rounded, label: 'Reservar'),
+    _TabItem(icon: Icons.casino_rounded, label: 'Sorteo'),
     _TabItem(icon: Icons.confirmation_number_rounded, label: 'Mis reservas'),
     _TabItem(icon: Icons.person_rounded, label: 'Perfil'),
   ];
 
   static const _screens = [
     HomeScreen(),
-    _BookRedirect(),
+    LotteryScreen(),
     MyReservationsScreen(),
     ProfileScreen(),
   ];
@@ -53,21 +53,12 @@ class MainShellScreen extends ConsumerWidget {
                 return Expanded(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      if (i == 1) {
-                        context.push('/booking/tenis');
-                      } else {
-                        ref.read(shellTabProvider.notifier).setTab(i);
-                      }
-                    },
+                    onTap: () => ref.read(shellTabProvider.notifier).setTab(i),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          tab.icon,
-                          size: 24,
-                          color: on ? AppColors.accentDeep : AppColors.textFaint,
-                        ),
+                        Icon(tab.icon, size: 24,
+                            color: on ? AppColors.accentDeep : AppColors.textFaint),
                         const SizedBox(height: 4),
                         Text(
                           tab.label,
@@ -94,10 +85,4 @@ class _TabItem {
   const _TabItem({required this.icon, required this.label});
   final IconData icon;
   final String label;
-}
-
-class _BookRedirect extends StatelessWidget {
-  const _BookRedirect();
-  @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
 }

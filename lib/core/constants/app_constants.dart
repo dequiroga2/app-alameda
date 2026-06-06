@@ -20,6 +20,12 @@ class AppConstants {
   static const String tableAmenities = 'amenities';
   static const String tableTimeSlots = 'time_slots';
   static const String tableNotifications = 'notifications';
+  static const String tableLotteryEntries = 'lottery_entries';
+  static const String tableLotteryDraws = 'lottery_draws';
+
+  // Lottery
+  static const int lotteryMaxEntries = 3;
+  static const String lotteryAmenityId = 'tenis';
 
   // Supabase storage buckets
   static const String bucketAmenityImages = 'amenity-images';
