@@ -34,7 +34,13 @@ class MyReservationsScreen extends ConsumerWidget {
                     Text('Mis reservas', style: AppTextStyles.headlineLg),
                     reservations.when(
                       data: (list) => Text(
-                        '${list.length} de ${AppConstants.weeklyReservationLimit} usadas esta semana',
+                        '${list.where((r) {
+                          final d = DateTime.parse(r['reservation_date'] as String);
+                          final now = DateTime.now();
+                          final mon = now.subtract(Duration(days: now.weekday - 1));
+                          final weekStart = DateTime(mon.year, mon.month, mon.day);
+                          return !d.isBefore(weekStart) && d.isBefore(weekStart.add(const Duration(days: 7)));
+                        }).length} de ${AppConstants.weeklyReservationLimit} usadas esta semana',
                         style: AppTextStyles.bodyMd.copyWith(color: AppColors.accentDeep.withValues(alpha: 0.8)),
                       ),
                       loading: () => const SizedBox.shrink(),

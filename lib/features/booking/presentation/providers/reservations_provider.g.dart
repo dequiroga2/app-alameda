@@ -7,9 +7,10 @@ part of 'reservations_provider.dart';
 // **************************************************************************
 
 String _$upcomingReservationsHash() =>
-    r'93354b6db1bf13bc4ff0f8513dffbaa79859b091';
+    r'3c257db96d4e3f39a8a0f40e312746d3bd693374';
 
-/// Reservas próximas del usuario actual (esta semana)
+/// Reservas próximas del usuario — desde hoy hasta 14 días adelante.
+/// Incluye las de la próxima semana asignadas por sorteo.
 ///
 /// Copied from [upcomingReservations].
 @ProviderFor(upcomingReservations)
@@ -29,7 +30,28 @@ final upcomingReservationsProvider =
 // ignore: unused_element
 typedef UpcomingReservationsRef =
     AutoDisposeFutureProviderRef<List<Map<String, dynamic>>>;
-String _$occupiedSlotsHash() => r'3d5ff710b357428bc0d4ffc60cc8b553dad11793';
+String _$weeklyReservationCountHash() =>
+    r'ef835486ad15dd164fb82ffa0c7f66adf932c8b0';
+
+/// Reservas solo de esta semana — para mostrar el cupo semanal (3/semana).
+///
+/// Copied from [weeklyReservationCount].
+@ProviderFor(weeklyReservationCount)
+final weeklyReservationCountProvider = AutoDisposeFutureProvider<int>.internal(
+  weeklyReservationCount,
+  name: r'weeklyReservationCountProvider',
+  debugGetCreateSourceHash:
+      const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$weeklyReservationCountHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef WeeklyReservationCountRef = AutoDisposeFutureProviderRef<int>;
+String _$occupiedSlotsHash() => r'f79f90e68b39dedbe84bbf1b59e1da8a92b42277';
 
 /// Copied from Dart SDK
 class _SystemHash {

@@ -120,8 +120,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       occupiedSlotsProvider(amenityId: widget.amenityId, date: _selectedDate),
     );
     final occupied = occupiedAsync.valueOrNull ?? [];
-    final weeklyAsync = ref.watch(upcomingReservationsProvider);
-    final weeklyUsed = weeklyAsync.valueOrNull?.length ?? 0;
+    final weeklyUsed = ref.watch(weeklyReservationCountProvider).valueOrNull ?? 0;
     final weeklyFull = weeklyUsed >= AppConstants.weeklyReservationLimit;
 
     return Scaffold(

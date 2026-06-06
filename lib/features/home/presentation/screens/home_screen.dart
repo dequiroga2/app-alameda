@@ -72,8 +72,8 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
 
                 // Cupo semanal
-                reservations.when(
-                  data: (list) => _WeeklyQuota(used: list.length),
+                ref.watch(weeklyReservationCountProvider).when(
+                  data: (count) => _WeeklyQuota(used: count),
                   loading: () => const _QuotaShimmer(),
                   error: (_, __) => const SizedBox.shrink(),
                 ),
