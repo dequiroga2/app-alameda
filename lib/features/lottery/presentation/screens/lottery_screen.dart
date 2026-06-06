@@ -12,6 +12,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/wave_header.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../booking/presentation/providers/reservations_provider.dart';
 import '../providers/lottery_provider.dart';
 
 // ── Screen state machine ──────────────────────────────────────────────────
@@ -64,12 +65,14 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
           'run_lottery_draw',
           params: {'p_week_start': lotteryFmtDate(weekStart)},
         );
-      } catch (_) {
-        // Idempotente: si ya se hizo, continúa
-      }
+      } catch (_) {}
     }
 
     await _loadEntries();
+
+    // Recargar reservas en el resto de la app
+    ref.invalidate(upcomingReservationsProvider);
+    ref.invalidate(weeklyReservationCountProvider);
 
     if (_entries.isEmpty) {
       if (mounted) setState(() => _mode = _Mode.resultsStatic);
@@ -152,14 +155,30 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
     await prefs.remove('lottery_reveal_seen_${lotteryFmtDate(weekStart)}');
 
     setState(() => _mode = _Mode.drawLoading);
+
+    // Ejecutar el sorteo — en debug mostramos el error real si falla
     try {
       await Supabase.instance.client.rpc(
         'run_lottery_draw',
         params: {'p_week_start': lotteryFmtDate(weekStart)},
       );
-    } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            backgroundColor: AppColors.error,
+            content: Text('RPC error: $e'),
+            duration: const Duration(seconds: 6),
+          ));
+        }
+      }
+    }
 
     await _loadEntries();
+
+    // Invalidar providers para que home y mis-reservas recarguen
+    ref.invalidate(upcomingReservationsProvider);
+    ref.invalidate(weeklyReservationCountProvider);
 
     if (_entries.isEmpty) {
       if (mounted) {
