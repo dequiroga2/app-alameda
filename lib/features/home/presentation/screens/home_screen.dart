@@ -102,8 +102,12 @@ class HomeScreen extends ConsumerWidget {
                     if (reservations.valueOrNull?.isNotEmpty ?? false)
                       TextButton(
                         onPressed: () => ref.read(shellTabProvider.notifier).setTab(2),
-                        child: Text('Ver todas',
-                            style: AppTextStyles.labelLg.copyWith(color: AppColors.accentDeep)),
+                        child: Text(
+                          (reservations.valueOrNull?.length ?? 0) > 3
+                              ? 'Ver todas (${reservations.valueOrNull!.length})'
+                              : 'Ver todas',
+                          style: AppTextStyles.labelLg.copyWith(color: AppColors.accentDeep),
+                        ),
                       ),
                   ],
                 ),
@@ -112,13 +116,42 @@ class HomeScreen extends ConsumerWidget {
                   data: (list) => list.isEmpty
                       ? _EmptyReservations(onBook: () => context.push('/booking/tenis'))
                       : Column(
-                          children: list.take(3).map((r) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _ReservationTile(
-                              reservation: r,
-                              onCancel: () => _cancelReservation(context, ref, r),
-                            ),
-                          )).toList(),
+                          children: [
+                            ...list.take(3).map((r) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _ReservationTile(
+                                reservation: r,
+                                onCancel: () => _cancelReservation(context, ref, r),
+                              ),
+                            )),
+                            if (list.length > 3)
+                              GestureDetector(
+                                onTap: () => ref.read(shellTabProvider.notifier).setTab(2),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accentTint,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.calendar_month_rounded,
+                                          size: 16, color: AppColors.accentDeep),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Y ${list.length - 3} reserva${list.length - 3 == 1 ? '' : 's'} más',
+                                        style: AppTextStyles.labelMd
+                                            .copyWith(color: AppColors.accentDeep),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.chevron_right_rounded,
+                                          size: 16, color: AppColors.accentDeep),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                   loading: () => const _ReservationShimmer(),
                   error: (_, __) => const SizedBox.shrink(),

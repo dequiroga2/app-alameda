@@ -122,6 +122,15 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     );
     final occupied = occupiedAsync.valueOrNull ?? [];
 
+    // Horas pasadas: si el día seleccionado es hoy, bloquear horas <= hora actual
+    final now = DateTime.now();
+    final isToday = _isSameDay(_selectedDate, now);
+    final pastHours = isToday
+        ? List.generate(now.hour + 1, (i) => AppConstants.firstBookingHour + i)
+            .where((h) => h <= now.hour)
+            .toList()
+        : <int>[];
+
     // Cupo de la semana del día SELECCIONADO (no siempre la semana actual)
     final weeklyUsed = ref.watch(
       weeklyReservationCountProvider(_selectedDate),
@@ -238,11 +247,13 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                     itemCount: _hours.length,
                     itemBuilder: (context, i) {
                       final h = _hours[i];
-                      final isOccupied = occupied.contains(h);
+                      final isPast     = pastHours.contains(h);
+                      final isOccupied = occupied.contains(h) || isPast;
                       final isSelected = _selectedHour == h;
                       return _HourTile(
                         hour: h,
                         isOccupied: isOccupied,
+                        isPast: isPast,
                         isSelected: isSelected,
                         onTap: isOccupied ? null : () => setState(() => _selectedHour = h),
                       );
@@ -450,11 +461,13 @@ class _HourTile extends StatelessWidget {
     required this.hour,
     required this.isOccupied,
     required this.isSelected,
+    this.isPast = false,
     this.onTap,
   });
 
   final int hour;
   final bool isOccupied;
+  final bool isPast;
   final bool isSelected;
   final VoidCallback? onTap;
 
@@ -507,7 +520,7 @@ class _HourTile extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              isOccupied ? 'Ocupado' : 'hasta ${fmt(hour + 1).replaceAll(' a.m.', '').replaceAll(' p.m.', '')}',
+              isPast ? 'Pasado' : isOccupied ? 'Ocupado' : 'hasta ${fmt(hour + 1).replaceAll(' a.m.', '').replaceAll(' p.m.', '')}',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
