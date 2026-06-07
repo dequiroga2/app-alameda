@@ -57,8 +57,7 @@ Future<List<Map<String, dynamic>>> myLotteryEntries(Ref ref) async {
       .select()
       .eq('user_id', user.id)
       .eq('week_start', lotteryFmtDate(weekStart))
-      .order('slot_date')
-      .order('start_hour');
+      .order('priority');
 
   return List<Map<String, dynamic>>.from(res as List);
 }

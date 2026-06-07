@@ -119,7 +119,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
     _entries = List<Map<String, dynamic>>.from(res as List);
   }
 
-  Future<void> _addEntry(String slotDate, int hour) async {
+  Future<void> _addEntry(String slotDate, int hour, int priority) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
     final weekStart = ref.read(lotteryWeekStartProvider);
@@ -131,6 +131,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
         'amenity_id': AppConstants.lotteryAmenityId,
         'slot_date': slotDate,
         'start_hour': hour,
+        'priority': priority,
       });
       ref.invalidate(myLotteryEntriesProvider);
     } catch (e) {
@@ -236,6 +237,19 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
     }
   }
 
+  /// Actualiza las prioridades en DB después de un reorder
+  Future<void> _reorderEntries(List<Map<String, dynamic>> reordered) async {
+    try {
+      for (int i = 0; i < reordered.length; i++) {
+        await Supabase.instance.client
+            .from(AppConstants.tableLotteryEntries)
+            .update({'priority': i + 1})
+            .eq('id', reordered[i]['id'] as String);
+      }
+      ref.invalidate(myLotteryEntriesProvider);
+    } catch (_) {}
+  }
+
   // ── Build ───────────────────────────────────────────────────────────────
 
   @override
@@ -294,6 +308,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
           weekStart: weekStart,
           onAdd: _addEntry,
           onDelete: _deleteEntry,
+          onReorder: _reorderEntries,
           onSimulate: kDebugMode ? _simulateDraw : null,
         );
       case _Mode.drawLoading:
@@ -349,12 +364,14 @@ class _OpenPhaseBody extends ConsumerWidget {
     required this.weekStart,
     required this.onAdd,
     required this.onDelete,
+    required this.onReorder,
     this.onSimulate,
   });
 
   final DateTime weekStart;
-  final Future<void> Function(String date, int hour) onAdd;
+  final Future<void> Function(String date, int hour, int priority) onAdd;
   final Future<void> Function(String id) onDelete;
+  final Future<void> Function(List<Map<String, dynamic>> reordered) onReorder;
   final VoidCallback? onSimulate;
 
   @override
@@ -473,13 +490,39 @@ class _OpenPhaseBody extends ConsumerWidget {
                     ),
                   )
                 else ...[
-                  ...entries.map((e) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _EntryTile(
-                      entry: e,
-                      onDelete: () => onDelete(e['id'] as String),
+                  if (entries.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(children: [
+                        const Icon(Icons.drag_indicator_rounded,
+                            size: 16, color: AppColors.textFaint),
+                        const SizedBox(width: 6),
+                        Text('Arrastra para cambiar la prioridad',
+                            style: AppTextStyles.caption
+                                .copyWith(color: AppColors.textFaint)),
+                      ]),
                     ),
-                  )),
+                  ReorderableListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: entries.length,
+                    onReorder: (oldIndex, newIndex) {
+                      if (newIndex > oldIndex) newIndex--;
+                      final reordered = [...entries];
+                      final item = reordered.removeAt(oldIndex);
+                      reordered.insert(newIndex, item);
+                      onReorder(reordered);
+                    },
+                    itemBuilder: (_, i) => Padding(
+                      key: ValueKey(entries[i]['id']),
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _EntryTile(
+                        entry: entries[i],
+                        priority: i + 1,
+                        onDelete: () => onDelete(entries[i]['id'] as String),
+                      ),
+                    ),
+                  ),
                   if (canAdd) ...[
                     const SizedBox(height: 4),
                     OutlinedButton.icon(
@@ -514,7 +557,8 @@ class _OpenPhaseBody extends ConsumerWidget {
           _SlotPickerSheet(weekStart: weekStart, existingEntries: existing),
     );
     if (result != null) {
-      await onAdd(result['slot_date'] as String, result['start_hour'] as int);
+      final nextPriority = existing.length + 1;
+      await onAdd(result['slot_date'] as String, result['start_hour'] as int, nextPriority);
     }
   }
 }
@@ -522,9 +566,21 @@ class _OpenPhaseBody extends ConsumerWidget {
 // ── Entry Tile ────────────────────────────────────────────────────────────
 
 class _EntryTile extends StatelessWidget {
-  const _EntryTile({required this.entry, required this.onDelete});
+  const _EntryTile({
+    required this.entry,
+    required this.priority,
+    required this.onDelete,
+  });
   final Map<String, dynamic> entry;
+  final int priority;
   final VoidCallback onDelete;
+
+  static const _priorityColors = [
+    AppColors.accentStrong,
+    AppColors.secondary,
+    AppColors.textFaint,
+  ];
+  static const _priorityLabels = ['1ª', '2ª', '3ª'];
 
   @override
   Widget build(BuildContext context) {
@@ -538,17 +594,24 @@ class _EntryTile extends StatelessWidget {
       return '${h % 12 == 0 ? 12 : h % 12}:00 $ampm';
     }
 
+    final pColor = _priorityColors[(priority - 1).clamp(0, 2)];
+    final pLabel = _priorityLabels[(priority - 1).clamp(0, 2)];
+
     return AppCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
       child: Row(children: [
+        // Badge de prioridad
         Container(
-          width: 44, height: 44,
+          width: 36, height: 36,
           decoration: BoxDecoration(
-            color: AppColors.accentTint,
+            color: pColor.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: const Icon(Icons.schedule_rounded,
-              color: AppColors.accentDeep, size: 20),
+          child: Center(
+            child: Text(pLabel,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, fontWeight: FontWeight.w800, color: pColor)),
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(child: Column(
@@ -558,6 +621,8 @@ class _EntryTile extends StatelessWidget {
             Text('${fmt(hour)} – ${fmt(hour + 1)}', style: AppTextStyles.bodyMd),
           ],
         )),
+        // Drag handle
+        const Icon(Icons.drag_handle_rounded, color: AppColors.textFaint, size: 22),
         IconButton(
           icon: const Icon(Icons.delete_outline_rounded,
               color: AppColors.error, size: 20),
