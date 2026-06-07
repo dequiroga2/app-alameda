@@ -52,15 +52,11 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     _channel = Supabase.instance.client
         .channel('user-notif-${user.id}')
         .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
+          event: PostgresChangeEvent.all,
           schema: 'public',
           table: AppConstants.tableUserNotifications,
-          // Sin filtro server-side — verificamos user_id en el cliente.
-          // Más confiable que el filtro de columna que requiere REPLICA IDENTITY FULL.
           callback: (_) async {
-            // El payload puede venir vacío sin REPLICA IDENTITY FULL.
-            // Hacemos un query directo — RLS garantiza que solo vemos
-            // las notificaciones del usuario autenticado.
+            debugPrint('🔔 [Realtime] user_notifications event received');
             try {
               final rows = await Supabase.instance.client
                   .from(AppConstants.tableUserNotifications)
@@ -70,21 +66,27 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                   .order('created_at', ascending: false)
                   .limit(5);
 
-              for (final notif in (rows as List)) {
+              debugPrint('🔔 [Realtime] unread rows: ${(rows as List).length}');
+
+              for (final notif in rows) {
                 final title = notif['title'] as String? ?? '¡Buenas noticias!';
                 final body  = notif['body']  as String? ?? '';
+                debugPrint('🔔 Showing notification: $title');
                 await NotificationService.show(title: title, body: body);
-                // Marcar como leída para no mostrarla de nuevo
                 await Supabase.instance.client
                     .from(AppConstants.tableUserNotifications)
                     .update({'read': true})
                     .eq('id', notif['id'] as String);
               }
               ref.invalidate(unreadNotificationsProvider);
-            } catch (_) {}
+            } catch (e) {
+              debugPrint('🔔 [Realtime] error: $e');
+            }
           },
         )
-        .subscribe();
+        .subscribe((status, error) {
+          debugPrint('🔔 [Realtime] channel status: $status — error: $error');
+        });
   }
 
   @override
