@@ -9,6 +9,7 @@ import '../../../../core/providers/shell_tab_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../booking/presentation/providers/reservations_provider.dart';
 import '../../../booking/presentation/screens/my_reservations_screen.dart';
 import '../../../lottery/presentation/screens/lottery_screen.dart';
 import '../../../notifications/presentation/providers/notifications_provider.dart';
@@ -26,7 +27,6 @@ class MainShellScreen extends ConsumerStatefulWidget {
 class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   RealtimeChannel? _channel;
   StreamSubscription<AuthState>? _authSub;
-  OverlayEntry? _bannerEntry;
 
   static const _tabs = [
     _TabItem(icon: Icons.home_rounded, label: 'Inicio'),
@@ -46,7 +46,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Cuando el usuario pulsa una notificación → ir a Mis Reservas (tab 2)
+      // Cuando el usuario pulsa la notificación iOS → ir a Mis Reservas (tab 2)
       NotificationService.onTapped = () {
         if (mounted) ref.read(shellTabProvider.notifier).setTab(2);
       };
@@ -85,10 +85,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                 final title = notif['title'] as String? ?? '¡Buenas noticias!';
                 final body  = notif['body']  as String? ?? '';
 
-                // Banner in-app (funciona en todos los simuladores y dispositivos)
-                if (mounted) _showInAppBanner(title, body);
-
-                // Notificación nativa (para cuando la app está en background)
+                // Notificación nativa iOS
                 await NotificationService.show(title: title, body: body);
 
                 await Supabase.instance.client
@@ -96,6 +93,9 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                     .update({'read': true})
                     .eq('id', notif['id'] as String);
               }
+
+              // Refrescar Mis Reservas para que el badge 1ª/2ª se actualice
+              ref.invalidate(upcomingReservationsProvider);
               ref.invalidate(unreadNotificationsProvider);
             } catch (_) {}
           },
@@ -103,42 +103,10 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
         .subscribe();
   }
 
-  /// Banner que se desliza desde arriba — funciona en cualquier iOS/Android.
-  void _showInAppBanner(String title, String body) {
-    _bannerEntry?.remove();
-    _bannerEntry = null;
-
-    final overlay = Overlay.of(context);
-    late OverlayEntry entry;
-
-    entry = OverlayEntry(
-      builder: (_) => _InAppBanner(
-        title: title,
-        body: body,
-        onDismiss: () {
-          entry.remove();
-          if (_bannerEntry == entry) _bannerEntry = null;
-        },
-      ),
-    );
-
-    overlay.insert(entry);
-    _bannerEntry = entry;
-
-    // Auto-dismiss después de 4 segundos
-    Future.delayed(const Duration(seconds: 4), () {
-      if (entry.mounted) {
-        entry.remove();
-        if (_bannerEntry == entry) _bannerEntry = null;
-      }
-    });
-  }
-
   @override
   void dispose() {
     _authSub?.cancel();
     _channel?.unsubscribe();
-    _bannerEntry?.remove();
     super.dispose();
   }
 
@@ -195,132 +163,6 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                   ),
                 );
               }),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── In-App Notification Banner ────────────────────────────────────────────────
-
-class _InAppBanner extends StatefulWidget {
-  const _InAppBanner({
-    required this.title,
-    required this.body,
-    required this.onDismiss,
-  });
-  final String title;
-  final String body;
-  final VoidCallback onDismiss;
-
-  @override
-  State<_InAppBanner> createState() => _InAppBannerState();
-}
-
-class _InAppBannerState extends State<_InAppBanner>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<Offset> _slide;
-  late Animation<double> _fade;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      duration: const Duration(milliseconds: 350),
-      vsync: this,
-    );
-    _slide = Tween<Offset>(
-      begin: const Offset(0, -1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
-    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _ctrl.forward();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final top = MediaQuery.of(context).padding.top;
-    return Positioned(
-      top: top + 12,
-      left: 16,
-      right: 16,
-      child: SlideTransition(
-        position: _slide,
-        child: FadeTransition(
-          opacity: _fade,
-          child: GestureDetector(
-            onTap: widget.onDismiss,
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    // Ícono de la app
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: AppColors.accentStrong,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(
-                        Icons.sports_tennis_rounded,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            widget.title,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            widget.body,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400,
-                              color: Colors.white.withValues(alpha: 0.85),
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ),
         ),

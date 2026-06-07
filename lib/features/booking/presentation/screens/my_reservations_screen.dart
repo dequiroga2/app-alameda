@@ -29,72 +29,85 @@ class MyReservationsScreen extends ConsumerWidget {
           await ref.read(upcomingReservationsProvider.future);
         },
         child: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: WaveHeader(
-              backgroundColor: AppColors.background,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(24, top + 16, 24, 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Mis reservas', style: AppTextStyles.headlineLg),
-                    reservations.when(
-                      data: (list) => Text(
-                        '${list.where((r) {
-                          final d = DateTime.parse(r['reservation_date'] as String);
-                          final now = DateTime.now();
-                          final mon = now.subtract(Duration(days: now.weekday - 1));
-                          final weekStart = DateTime(mon.year, mon.month, mon.day);
-                          return !d.isBefore(weekStart) && d.isBefore(weekStart.add(const Duration(days: 7)));
-                        }).length} de ${AppConstants.weeklyReservationLimit} usadas esta semana',
-                        style: AppTextStyles.bodyMd.copyWith(color: AppColors.accentDeep.withValues(alpha: 0.8)),
+          slivers: [
+            SliverToBoxAdapter(
+              child: WaveHeader(
+                backgroundColor: AppColors.background,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(24, top + 16, 24, 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Mis reservas', style: AppTextStyles.headlineLg),
+                      reservations.when(
+                        data: (list) {
+                          final thisWeek = list.where((r) {
+                            final d = DateTime.parse(r['reservation_date'] as String);
+                            final now = DateTime.now();
+                            final mon = now.subtract(Duration(days: now.weekday - 1));
+                            final weekStart = DateTime(mon.year, mon.month, mon.day);
+                            return !d.isBefore(weekStart) &&
+                                d.isBefore(weekStart.add(const Duration(days: 7)));
+                          }).length;
+                          return Text(
+                            '$thisWeek de ${AppConstants.weeklyReservationLimit} usadas esta semana',
+                            style: AppTextStyles.bodyMd.copyWith(
+                                color: AppColors.accentDeep.withValues(alpha: 0.8)),
+                          );
+                        },
+                        loading: () => const SizedBox.shrink(),
+                        error: (_, __) => const SizedBox.shrink(),
                       ),
-                      loading: () => const SizedBox.shrink(),
-                      error: (_, __) => const SizedBox.shrink(),
-                    ),
-                    const SizedBox(height: 6),
-                  ],
+                      const SizedBox(height: 6),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
-            sliver: reservations.when(
-              data: (list) => list.isEmpty
-                  ? SliverToBoxAdapter(child: _EmptyState(onBook: () => context.push('/booking/tenis')))
-                  : SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, i) {
-                          if (i == list.length) {
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
+              sliver: reservations.when(
+                data: (list) => list.isEmpty
+                    ? SliverToBoxAdapter(
+                        child: _EmptyState(
+                            onBook: () => context.push('/booking/tenis')))
+                    : SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) {
+                            if (i == list.length) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: _AddMoreButton(
+                                    onTap: () =>
+                                        context.push('/booking/tenis')),
+                              );
+                            }
                             return Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: _AddMoreButton(onTap: () => context.push('/booking/tenis')),
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _ReservationCard(
+                                reservation: list[i],
+                                onCancel: () =>
+                                    _cancel(context, ref, list[i]),
+                              ),
                             );
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _ReservationCard(
-                              reservation: list[i],
-                              onCancel: () => _cancel(context, ref, list[i]),
-                            ),
-                          );
-                        },
-                        childCount: list.length + 1,
+                          },
+                          childCount: list.length + 1,
+                        ),
                       ),
-                    ),
-              loading: () => const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
-              error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
+                loading: () => const SliverToBoxAdapter(
+                    child: Center(child: CircularProgressIndicator())),
+                error: (_, __) =>
+                    const SliverToBoxAdapter(child: SizedBox.shrink()),
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
   }
 
-  Future<void> _cancel(BuildContext ctx, WidgetRef ref, Map<String, dynamic> r) async {
+  Future<void> _cancel(
+      BuildContext ctx, WidgetRef ref, Map<String, dynamic> r) async {
     final confirm = await showModalBottomSheet<bool>(
       context: ctx,
       backgroundColor: AppColors.surface,
@@ -123,8 +136,11 @@ class MyReservationsScreen extends ConsumerWidget {
   }
 }
 
+// ── Reservation card ──────────────────────────────────────────────────────────
+
 class _ReservationCard extends StatelessWidget {
-  const _ReservationCard({required this.reservation, required this.onCancel});
+  const _ReservationCard(
+      {required this.reservation, required this.onCancel});
   final Map<String, dynamic> reservation;
   final VoidCallback onCancel;
 
@@ -133,9 +149,14 @@ class _ReservationCard extends StatelessWidget {
     final date = DateTime.parse(reservation['reservation_date'] as String);
     final hour = reservation['start_hour'] as int;
     final amenityName = reservation['amenity_name'] as String? ?? 'Zona común';
+    final slotOption = (reservation['slot_option'] as int?) ?? 1;
+    final isSecond = slotOption == 2;
 
     const days = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
-    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const months = [
+      'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+      'jul', 'ago', 'sep', 'oct', 'nov', 'dic'
+    ];
 
     String fmt(int h) {
       final ampm = h < 12 ? 'a.m.' : 'p.m.';
@@ -144,41 +165,84 @@ class _ReservationCard extends StatelessWidget {
     }
 
     final today = DateTime.now();
-    final isToday = date.year == today.year && date.month == today.month && date.day == today.day;
-    final isTomorrow = date.difference(DateTime(today.year, today.month, today.day)).inDays == 1;
-    final dateLabel = isToday ? 'Hoy' : isTomorrow ? 'Mañana' : '${days[date.weekday % 7]} ${date.day} ${months[date.month - 1]}';
+    final isToday = date.year == today.year &&
+        date.month == today.month &&
+        date.day == today.day;
+    final isTomorrow =
+        date.difference(DateTime(today.year, today.month, today.day)).inDays ==
+            1;
+    final dateLabel = isToday
+        ? 'Hoy'
+        : isTomorrow
+            ? 'Mañana'
+            : '${days[date.weekday % 7]} ${date.day} ${months[date.month - 1]}';
 
     return AppCard(
       padding: const EdgeInsets.all(14),
       child: Row(
         children: [
+          // ── Fecha ────────────────────────────────────────────────────────
           Container(
-            width: 52, height: 56,
+            width: 52,
+            height: 56,
             decoration: BoxDecoration(
-              color: AppColors.accentTint,
+              color: isSecond
+                  ? AppColors.warningTint
+                  : AppColors.accentTint,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(days[date.weekday % 7].toUpperCase(),
-                    style: AppTextStyles.labelSm.copyWith(color: AppColors.accentDeep, fontSize: 10)),
-                Text('${date.day}', style: AppTextStyles.headlineSm.copyWith(color: AppColors.accentDeep)),
+                Text(
+                  days[date.weekday % 7].toUpperCase(),
+                  style: AppTextStyles.labelSm.copyWith(
+                    color: isSecond
+                        ? AppColors.warning
+                        : AppColors.accentDeep,
+                    fontSize: 10,
+                  ),
+                ),
+                Text(
+                  '${date.day}',
+                  style: AppTextStyles.headlineSm.copyWith(
+                    color: isSecond
+                        ? AppColors.warning
+                        : AppColors.accentDeep,
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(width: 14),
+
+          // ── Info ─────────────────────────────────────────────────────────
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(amenityName, style: AppTextStyles.titleMd),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(amenityName,
+                          style: AppTextStyles.titleMd,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 6),
+                    _SlotBadge(isSecond: isSecond),
+                  ],
+                ),
                 const SizedBox(height: 2),
-                Text('$dateLabel · ${fmt(hour)} – ${fmt(hour + 1)}',
-                    style: AppTextStyles.bodyMd),
+                Text(
+                  '$dateLabel · ${fmt(hour)} – ${fmt(hour + 1)}',
+                  style: AppTextStyles.bodyMd,
+                ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
+
+          // ── Acción ───────────────────────────────────────────────────────
           AppButton(
             label: 'Cancelar',
             onPressed: onCancel,
@@ -191,6 +255,35 @@ class _ReservationCard extends StatelessWidget {
   }
 }
 
+// ── Slot badge (1ª opción / 2ª opción) ───────────────────────────────────────
+
+class _SlotBadge extends StatelessWidget {
+  const _SlotBadge({required this.isSecond});
+  final bool isSecond;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: isSecond ? AppColors.warningTint : AppColors.accentTint,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Text(
+        isSecond ? '2ª opción' : 'Confirmada',
+        style: AppTextStyles.labelSm.copyWith(
+          color: isSecond ? AppColors.warning : AppColors.accentDeep,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Cancel sheet ──────────────────────────────────────────────────────────────
+
 class _CancelSheet extends StatelessWidget {
   const _CancelSheet({required this.reservation});
   final Map<String, dynamic> reservation;
@@ -199,9 +292,15 @@ class _CancelSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final date = DateTime.parse(reservation['reservation_date'] as String);
     final hour = reservation['start_hour'] as int;
-    const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-    const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
-        'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    final slotOption = (reservation['slot_option'] as int?) ?? 1;
+    const days = [
+      'domingo', 'lunes', 'martes', 'miércoles',
+      'jueves', 'viernes', 'sábado'
+    ];
+    const months = [
+      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+    ];
 
     String fmt(int h) {
       final ampm = h < 12 ? 'a.m.' : 'p.m.';
@@ -209,21 +308,52 @@ class _CancelSheet extends StatelessWidget {
       return '$h12:00 $ampm';
     }
 
+    final dayName = days[date.weekday % 7];
+    final capitalDay = dayName[0].toUpperCase() + dayName.substring(1);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 12, 22, 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(width: 40, height: 5, decoration: BoxDecoration(
-            color: AppColors.hair, borderRadius: BorderRadius.circular(99))),
+          Container(
+            width: 40,
+            height: 5,
+            decoration: BoxDecoration(
+                color: AppColors.hair,
+                borderRadius: BorderRadius.circular(99)),
+          ),
           const SizedBox(height: 20),
           Text('¿Cancelar reserva?', style: AppTextStyles.headlineSm),
           const SizedBox(height: 8),
           Text(
-            '${days[date.weekday % 7][0].toUpperCase()}${days[date.weekday % 7].substring(1)} ${date.day} de ${months[date.month - 1]} · ${fmt(hour)} – ${fmt(hour + 1)}',
+            '$capitalDay ${date.day} de ${months[date.month - 1]} · ${fmt(hour)} – ${fmt(hour + 1)}',
             style: AppTextStyles.bodyLg,
             textAlign: TextAlign.center,
           ),
+          if (slotOption == 2) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.warningTint,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      color: AppColors.warning, size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Cancelarás tu 2ª opción',
+                    style: AppTextStyles.labelMd
+                        .copyWith(color: AppColors.warning),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           AppButton(
             label: 'Sí, cancelar',
@@ -245,6 +375,8 @@ class _CancelSheet extends StatelessWidget {
   }
 }
 
+// ── Empty state ───────────────────────────────────────────────────────────────
+
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onBook});
   final VoidCallback onBook;
@@ -256,23 +388,29 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 56, height: 56,
-            decoration: const BoxDecoration(color: AppColors.accentTint, shape: BoxShape.circle),
+            width: 56,
+            height: 56,
+            decoration: const BoxDecoration(
+                color: AppColors.accentTint, shape: BoxShape.circle),
             child: const Icon(Icons.confirmation_number_rounded,
                 color: AppColors.accentStrong, size: 28),
           ),
           const SizedBox(height: 14),
-          Text('Sin reservas todavía', style: AppTextStyles.titleLg, textAlign: TextAlign.center),
+          Text('Sin reservas todavía',
+              style: AppTextStyles.titleLg, textAlign: TextAlign.center),
           const SizedBox(height: 6),
           Text('Reserva la cancha en unos segundos.',
               style: AppTextStyles.bodyMd, textAlign: TextAlign.center),
           const SizedBox(height: 18),
-          AppButton(label: 'Reservar cancha', onPressed: onBook, icon: Icons.add_rounded),
+          AppButton(
+              label: 'Reservar cancha', onPressed: onBook, icon: Icons.add_rounded),
         ],
       ),
     );
   }
 }
+
+// ── Add more button ───────────────────────────────────────────────────────────
 
 class _AddMoreButton extends StatelessWidget {
   const _AddMoreButton({required this.onTap});
@@ -286,8 +424,8 @@ class _AddMoreButton extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.accentSoft, width: 1.5,
-              style: BorderStyle.solid),
+          border: Border.all(
+              color: AppColors.accentSoft, width: 1.5, style: BorderStyle.solid),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
