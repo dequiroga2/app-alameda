@@ -16,7 +16,10 @@ import '../../../booking/presentation/providers/reservations_provider.dart';
 import '../providers/lottery_provider.dart';
 
 // ── Screen state machine ──────────────────────────────────────────────────
-enum _Mode { loading, open, drawLoading, countdown, revealing, resultsStatic }
+enum _Mode { loading, open, drawPending, drawLoading, countdown, revealing, resultsStatic }
+
+// Override de fase para debug
+enum _DebugPhase { none, inscripciones, viernesAntes, viernesDespues, resultados }
 
 class LotteryScreen extends ConsumerStatefulWidget {
   const LotteryScreen({super.key});
@@ -30,6 +33,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
   int _countdownValue = 3;
   int _revealedCount = 0;
   List<Map<String, dynamic>> _entries = [];
+  _DebugPhase _debugPhase = _DebugPhase.none;
 
   @override
   void initState() {
@@ -62,7 +66,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
       final drawDone = await ref.read(lotteryDrawDoneProvider.future);
       if (!drawDone) {
         // El cron aún no lo corrió — mostrar pantalla de espera
-        if (mounted) setState(() => _mode = _Mode.resultsStatic);
+        if (mounted) setState(() => _mode = _Mode.drawPending);
         return;
       }
     }
@@ -236,7 +240,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
     }
   }
 
-  /// Actualiza las prioridades en DB después de un reorder
+  /// Actualiza prioridades en DB tras un reorder
   Future<void> _reorderEntries(List<Map<String, dynamic>> reordered) async {
     try {
       for (int i = 0; i < reordered.length; i++) {
@@ -247,6 +251,46 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
       }
       ref.invalidate(myLotteryEntriesProvider);
     } catch (_) {}
+  }
+
+  // ── Debug helpers ────────────────────────────────────────────────────────
+
+  /// Reset completo: borra el sorteo y resetea entradas a pending
+  Future<void> _debugReset() async {
+    final weekStart = ref.read(lotteryWeekStartProvider);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('lottery_reveal_seen_${lotteryFmtDate(weekStart)}');
+    try {
+      await Supabase.instance.client.rpc(
+        'reset_lottery_draw_debug',
+        params: {'p_week_start': lotteryFmtDate(weekStart)},
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Reset error: $e'), backgroundColor: AppColors.error));
+      }
+    }
+    _entries = [];
+    ref.invalidate(myLotteryEntriesProvider);
+    ref.invalidate(upcomingReservationsProvider);
+    ref.invalidate(weeklyReservationCountProvider);
+    if (mounted) setState(() { _mode = _Mode.open; _debugPhase = _DebugPhase.none; });
+  }
+
+  /// Cambia la fase visible en debug sin tocar el DB
+  void _debugSetPhase(_DebugPhase phase) async {
+    setState(() { _debugPhase = phase; });
+    if (phase == _DebugPhase.inscripciones) {
+      setState(() => _mode = _Mode.open);
+    } else if (phase == _DebugPhase.viernesAntes) {
+      setState(() => _mode = _Mode.drawPending);
+    } else if (phase == _DebugPhase.viernesDespues) {
+      await _simulateDraw();
+    } else if (phase == _DebugPhase.resultados) {
+      await _loadEntries();
+      if (mounted) setState(() => _mode = _Mode.resultsStatic);
+    }
   }
 
   // ── Build ───────────────────────────────────────────────────────────────
@@ -288,6 +332,14 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
               ),
             ),
           ),
+          if (kDebugMode)
+            SliverToBoxAdapter(
+              child: _DebugPanel(
+                current: _debugPhase,
+                onPhase: _debugSetPhase,
+                onReset: _debugReset,
+              ),
+            ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
             sliver: SliverToBoxAdapter(child: _buildBody(weekStart)),
@@ -304,13 +356,13 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
             child: Center(child: CircularProgressIndicator()));
       case _Mode.open:
         return _OpenPhaseBody(
-
           weekStart: weekStart,
           onAdd: _addEntry,
           onDelete: _deleteEntry,
           onReorder: _reorderEntries,
-          onSimulate: kDebugMode ? _simulateDraw : null,
         );
+      case _Mode.drawPending:
+        return _DrawPendingBody();
       case _Mode.drawLoading:
         return const _DrawLoadingBody();
       case _Mode.countdown:
@@ -359,56 +411,35 @@ class _PhaseChip extends StatelessWidget {
 
 // ── OPEN PHASE ────────────────────────────────────────────────────────────
 
-class _OpenPhaseBody extends ConsumerWidget {
+class _OpenPhaseBody extends ConsumerStatefulWidget {
   const _OpenPhaseBody({
     required this.weekStart,
     required this.onAdd,
     required this.onDelete,
     required this.onReorder,
-    this.onSimulate,
   });
 
   final DateTime weekStart;
   final Future<void> Function(String date, int hour, int priority) onAdd;
   final Future<void> Function(String id) onDelete;
   final Future<void> Function(List<Map<String, dynamic>> reordered) onReorder;
-  final VoidCallback? onSimulate;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_OpenPhaseBody> createState() => _OpenPhaseBodyState();
+}
+
+class _OpenPhaseBodyState extends ConsumerState<_OpenPhaseBody> {
+  // Estado local optimista — se actualiza al instante al arrastrar,
+  // luego se sincroniza con DB. null = usar datos del provider.
+  List<Map<String, dynamic>>? _localEntries;
+
+  @override
+  Widget build(BuildContext context) {
     final entriesAsync = ref.watch(myLotteryEntriesProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Botón de prueba (solo debug) ─────────────────────────────
-        if (onSimulate != null) ...[
-          GestureDetector(
-            onTap: onSimulate,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.warningTint,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.warning, width: 1.5),
-              ),
-              child: Row(children: [
-                const Icon(Icons.science_rounded, color: AppColors.warning, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '🧪 DEBUG — Simular sorteo del viernes',
-                    style: AppTextStyles.labelSm.copyWith(color: AppColors.warning),
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.warning, size: 18),
-              ]),
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
-
         // Info banner
         AppCard(
           padding: const EdgeInsets.all(16),
@@ -437,7 +468,9 @@ class _OpenPhaseBody extends ConsumerWidget {
         entriesAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (_, __) => const SizedBox.shrink(),
-          data: (entries) {
+          data: (providerEntries) {
+            // Usar estado local si hay un reorder en curso, si no el del provider
+            final entries = _localEntries ?? providerEntries;
             final canAdd = entries.length < AppConstants.lotteryMaxEntries;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -449,7 +482,7 @@ class _OpenPhaseBody extends ConsumerWidget {
                         style: AppTextStyles.titleLg),
                     if (canAdd)
                       TextButton.icon(
-                        onPressed: () => _openPicker(context, weekStart, entries),
+                        onPressed: () => _openPicker(context, widget.weekStart, entries),
                         icon: const Icon(Icons.add_rounded, size: 18),
                         label: const Text('Agregar'),
                         style: TextButton.styleFrom(
@@ -484,7 +517,7 @@ class _OpenPhaseBody extends ConsumerWidget {
                         AppButton(
                           label: 'Elegir horario',
                           icon: Icons.add_rounded,
-                          onPressed: () => _openPicker(context, weekStart, entries),
+                          onPressed: () => _openPicker(context, widget.weekStart, entries),
                         ),
                       ],
                     ),
@@ -505,28 +538,52 @@ class _OpenPhaseBody extends ConsumerWidget {
                   ReorderableListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: entries.length,
+                    // Proxy decorador: elimina el rectángulo feo, flota como la card real
+                    proxyDecorator: (child, index, animation) => Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                      child: AnimatedBuilder(
+                        animation: animation,
+                        builder: (_, __) => DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            )],
+                          ),
+                          child: child,
+                        ),
+                      ),
+                    ),
                     onReorder: (oldIndex, newIndex) {
                       if (newIndex > oldIndex) newIndex--;
                       final reordered = [...entries];
                       final item = reordered.removeAt(oldIndex);
                       reordered.insert(newIndex, item);
-                      onReorder(reordered);
+                      // Actualización optimista inmediata
+                      setState(() => _localEntries = reordered);
+                      // Sync con DB — al terminar deja que el provider tome el control
+                      widget.onReorder(reordered).then((_) {
+                        if (mounted) setState(() => _localEntries = null);
+                      });
                     },
+                    itemCount: entries.length,
                     itemBuilder: (_, i) => Padding(
                       key: ValueKey(entries[i]['id']),
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _EntryTile(
                         entry: entries[i],
                         priority: i + 1,
-                        onDelete: () => onDelete(entries[i]['id'] as String),
+                        onDelete: () => widget.onDelete(entries[i]['id'] as String),
                       ),
                     ),
                   ),
                   if (canAdd) ...[
                     const SizedBox(height: 4),
                     OutlinedButton.icon(
-                      onPressed: () => _openPicker(context, weekStart, entries),
+                      onPressed: () => _openPicker(context, widget.weekStart, entries),
                       icon: const Icon(Icons.add_rounded),
                       label: const Text('Agregar otro horario'),
                       style: OutlinedButton.styleFrom(
@@ -558,7 +615,7 @@ class _OpenPhaseBody extends ConsumerWidget {
     );
     if (result != null) {
       final nextPriority = existing.length + 1;
-      await onAdd(result['slot_date'] as String, result['start_hour'] as int, nextPriority);
+      await widget.onAdd(result['slot_date'] as String, result['start_hour'] as int, nextPriority);
     }
   }
 }
@@ -621,13 +678,15 @@ class _EntryTile extends StatelessWidget {
             Text('${fmt(hour)} – ${fmt(hour + 1)}', style: AppTextStyles.bodyMd),
           ],
         )),
-        // Drag handle
-        const Icon(Icons.drag_handle_rounded, color: AppColors.textFaint, size: 22),
         IconButton(
           icon: const Icon(Icons.delete_outline_rounded,
               color: AppColors.error, size: 20),
           onPressed: onDelete,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         ),
+        const SizedBox(width: 4),
+        const Icon(Icons.drag_handle_rounded, color: AppColors.textFaint, size: 22),
       ]),
     );
   }
@@ -790,6 +849,124 @@ class _SlotPickerSheetState extends State<_SlotPickerSheet> {
   }
 }
 
+// ── Debug Panel ───────────────────────────────────────────────────────────
+
+class _DebugPanel extends StatelessWidget {
+  const _DebugPanel({
+    required this.current,
+    required this.onPhase,
+    required this.onReset,
+  });
+  final _DebugPhase current;
+  final void Function(_DebugPhase) onPhase;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    const phases = [
+      (_DebugPhase.inscripciones, '📝 Inscripciones'),
+      (_DebugPhase.viernesAntes,  '⏳ Vie antes'),
+      (_DebugPhase.viernesDespues,'🎲 Vie sorteo'),
+      (_DebugPhase.resultados,    '📊 Resultados'),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.warningTint,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.warning, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.science_rounded, color: AppColors.warning, size: 16),
+            const SizedBox(width: 6),
+            Text('DEBUG — Simular fase',
+                style: AppTextStyles.labelSm.copyWith(color: AppColors.warning)),
+            const Spacer(),
+            GestureDetector(
+              onTap: onReset,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text('🗑 Reset todo',
+                    style: AppTextStyles.labelSm.copyWith(
+                        color: AppColors.error, fontSize: 11)),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: phases.map((p) {
+              final selected = current == p.$1;
+              return GestureDetector(
+                onTap: () => onPhase(p.$1),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.warning : Colors.white,
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: AppColors.warning, width: 1.5),
+                  ),
+                  child: Text(p.$2,
+                      style: AppTextStyles.labelSm.copyWith(
+                          color: selected ? Colors.white : AppColors.warning,
+                          fontSize: 12)),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Draw Pending (viernes antes del sorteo) ───────────────────────────────
+
+class _DrawPendingBody extends StatelessWidget {
+  const _DrawPendingBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(32),
+      child: Column(children: [
+        const Icon(Icons.hourglass_top_rounded,
+            color: AppColors.accentStrong, size: 52),
+        const SizedBox(height: 16),
+        Text('El sorteo está por realizarse',
+            style: AppTextStyles.titleLg, textAlign: TextAlign.center),
+        const SizedBox(height: 8),
+        Text(
+          'Esta tarde se asignarán los horarios de la próxima semana. '
+          'Vuelve más tarde para ver tus resultados.',
+          style: AppTextStyles.bodyMd, textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.accentTint,
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text('Hoy a las 6:00 p.m.',
+              style: AppTextStyles.labelMd.copyWith(color: AppColors.accentDeep)),
+        ),
+      ]),
+    );
+  }
+}
+
 // ── Draw Loading ──────────────────────────────────────────────────────────
 
 class _DrawLoadingBody extends StatelessWidget {
@@ -926,28 +1103,16 @@ class _ResultsBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (entries.isEmpty) {
-      // Viernes antes del sorteo automático
-      final phase = DateTime.now().weekday == DateTime.friday;
       return AppCard(
         padding: const EdgeInsets.all(32),
         child: Column(children: [
-          Icon(
-            phase ? Icons.hourglass_top_rounded : Icons.inbox_rounded,
-            color: phase ? AppColors.accentStrong : AppColors.textFaint,
-            size: 48,
-          ),
+          const Icon(Icons.inbox_rounded, color: AppColors.textFaint, size: 48),
           const SizedBox(height: 12),
-          Text(
-            phase ? 'El sorteo está por realizarse' : 'No participaste este sorteo',
-            style: AppTextStyles.titleLg, textAlign: TextAlign.center,
-          ),
+          Text('No participaste este sorteo',
+              style: AppTextStyles.titleLg, textAlign: TextAlign.center),
           const SizedBox(height: 6),
-          Text(
-            phase
-                ? 'Esta tarde se asignarán los horarios de la próxima semana. Vuelve más tarde para ver tus resultados.'
-                : 'El sábado abre la inscripción para la próxima semana.',
-            style: AppTextStyles.bodyMd, textAlign: TextAlign.center,
-          ),
+          Text('El sábado abre la inscripción para la próxima semana.',
+              style: AppTextStyles.bodyMd, textAlign: TextAlign.center),
         ]),
       );
     }
@@ -1013,6 +1178,7 @@ class _ResultsBody extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 12),
           child: _ResultCard(
             entry: entries[i],
+            allEntries: entries,
             revealed: i < revealedCount,
           ),
         )),
@@ -1024,8 +1190,13 @@ class _ResultsBody extends StatelessWidget {
 // ── Result Card ───────────────────────────────────────────────────────────
 
 class _ResultCard extends StatefulWidget {
-  const _ResultCard({required this.entry, required this.revealed});
+  const _ResultCard({
+    required this.entry,
+    required this.allEntries,
+    required this.revealed,
+  });
   final Map<String, dynamic> entry;
+  final List<Map<String, dynamic>> allEntries;
   final bool revealed;
 
   @override
@@ -1107,6 +1278,17 @@ class _ResultCardState extends State<_ResultCard>
       );
     }
 
+    // Determinar razón de pérdida
+    String lostReason = '';
+    if (!won) {
+      final slotDate = widget.entry['slot_date'] as String;
+      final wonSameDay = widget.allEntries.any(
+        (e) => e['slot_date'] == slotDate && e['status'] == 'won');
+      lostReason = wonSameDay
+          ? 'Ya ganaste otro horario ese día'
+          : 'Otro residente ganó el sorteo';
+    }
+
     // Revealed card
     return ScaleTransition(
       scale: _scale,
@@ -1146,6 +1328,12 @@ class _ResultCardState extends State<_ResultCard>
                 ),
                 Text('$dateLabel · ${fmt(hour)} – ${fmt(hour + 1)}',
                     style: AppTextStyles.bodyMd),
+                if (!won) ...[
+                  const SizedBox(height: 3),
+                  Text(lostReason,
+                      style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textFaint, fontSize: 11)),
+                ],
               ],
             ),
           ),
