@@ -11,13 +11,16 @@ class NotificationService {
   static Future<void> init() async {
     if (_initialized) return;
 
-    // '@mipmap/ic_launcher' → el ícono generado por flutter_launcher_icons
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
+      // Mostrar banner incluso cuando la app está en primer plano
+      defaultPresentAlert: true,
+      defaultPresentBadge: true,
+      defaultPresentSound: true,
     );
 
     await _plugin.initialize(
