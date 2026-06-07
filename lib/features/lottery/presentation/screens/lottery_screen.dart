@@ -240,17 +240,14 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
     }
   }
 
-  /// Actualiza prioridades en DB tras un reorder
+  /// Actualiza prioridades en DB tras un reorder (sin invalidar — lo hace el caller)
   Future<void> _reorderEntries(List<Map<String, dynamic>> reordered) async {
-    try {
-      for (int i = 0; i < reordered.length; i++) {
-        await Supabase.instance.client
-            .from(AppConstants.tableLotteryEntries)
-            .update({'priority': i + 1})
-            .eq('id', reordered[i]['id'] as String);
-      }
-      ref.invalidate(myLotteryEntriesProvider);
-    } catch (_) {}
+    for (int i = 0; i < reordered.length; i++) {
+      await Supabase.instance.client
+          .from(AppConstants.tableLotteryEntries)
+          .update({'priority': i + 1})
+          .eq('id', reordered[i]['id'] as String);
+    }
   }
 
   // ── Debug helpers ────────────────────────────────────────────────────────
@@ -562,10 +559,17 @@ class _OpenPhaseBodyState extends ConsumerState<_OpenPhaseBody> {
                       final reordered = [...entries];
                       final item = reordered.removeAt(oldIndex);
                       reordered.insert(newIndex, item);
-                      // Actualización optimista inmediata
+                      // Actualización optimista inmediata — UI responde al instante
                       setState(() => _localEntries = reordered);
-                      // Sync con DB — al terminar deja que el provider tome el control
+                      // Sync con DB → luego invalidar → limpiar local
                       widget.onReorder(reordered).then((_) {
+                        if (!mounted) return;
+                        // Primero limpia local, luego invalida para que el
+                        // provider refetch ya encuentre los datos nuevos en DB
+                        setState(() => _localEntries = null);
+                        ref.invalidate(myLotteryEntriesProvider);
+                      }).catchError((_) {
+                        // Si el DB falló, revertir al orden original
                         if (mounted) setState(() => _localEntries = null);
                       });
                     },
