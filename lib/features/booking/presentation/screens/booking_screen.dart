@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/constants/app_constants.dart';
@@ -27,6 +28,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   int? _selectedHour;
   bool _selectedIsSecond = false; // ¿La hora seleccionada es 2da opción?
   bool _confirming = false;
+  RealtimeChannel? _channel;
 
   final _amenityName = 'Cancha de tenis';
 
@@ -34,6 +36,57 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   void initState() {
     super.initState();
     _selectedDate = DateTime.now();
+    _subscribeToSlots();
+  }
+
+  /// Suscripción Realtime: cuando alguien reserva o cancela,
+  /// el provider se recarga y la grilla se actualiza al instante.
+  void _subscribeToSlots() {
+    _channel = Supabase.instance.client
+        .channel('booking-slots-${widget.amenityId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,   // INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: AppConstants.tableReservations,
+          callback: (_) {
+            // Invalida el provider para la fecha actualmente visible
+            if (mounted) {
+              ref.invalidate(
+                occupiedSlotsProvider(
+                  amenityId: widget.amenityId,
+                  date: _selectedDate,
+                ),
+              );
+              // Si la hora seleccionada ya no está disponible, deselecciona
+              _clearSelectionIfUnavailable();
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  /// Revisa si el slot seleccionado se llenó tras una actualización en tiempo real.
+  void _clearSelectionIfUnavailable() {
+    if (_selectedHour == null) return;
+    final slotMap = ref
+        .read(occupiedSlotsProvider(amenityId: widget.amenityId, date: _selectedDate))
+        .valueOrNull ?? {};
+    final taken = slotMap[_selectedHour] ?? 0;
+    // Si era 1ra opción y ya hay 2 opciones tomadas, o era 2da y ya está lleno
+    final nowFull = taken >= 2;
+    final wasFirst = !_selectedIsSecond && taken >= 1;
+    if (nowFull || wasFirst) {
+      setState(() {
+        _selectedHour = null;
+        _selectedIsSecond = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    super.dispose();
   }
 
   List<DateTime> get _bookableDays {
