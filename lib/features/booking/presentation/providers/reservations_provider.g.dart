@@ -31,27 +31,7 @@ final upcomingReservationsProvider =
 typedef UpcomingReservationsRef =
     AutoDisposeFutureProviderRef<List<Map<String, dynamic>>>;
 String _$weeklyReservationCountHash() =>
-    r'ef835486ad15dd164fb82ffa0c7f66adf932c8b0';
-
-/// Reservas solo de esta semana — para mostrar el cupo semanal (3/semana).
-///
-/// Copied from [weeklyReservationCount].
-@ProviderFor(weeklyReservationCount)
-final weeklyReservationCountProvider = AutoDisposeFutureProvider<int>.internal(
-  weeklyReservationCount,
-  name: r'weeklyReservationCountProvider',
-  debugGetCreateSourceHash:
-      const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$weeklyReservationCountHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
-
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef WeeklyReservationCountRef = AutoDisposeFutureProviderRef<int>;
-String _$occupiedSlotsHash() => r'f79f90e68b39dedbe84bbf1b59e1da8a92b42277';
+    r'63f80432cfef8198065e34a1bedcf460707f31b2';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -73,6 +53,145 @@ class _SystemHash {
     return 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
   }
 }
+
+/// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
+/// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+///
+/// Copied from [weeklyReservationCount].
+@ProviderFor(weeklyReservationCount)
+const weeklyReservationCountProvider = WeeklyReservationCountFamily();
+
+/// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
+/// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+///
+/// Copied from [weeklyReservationCount].
+class WeeklyReservationCountFamily extends Family<AsyncValue<int>> {
+  /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
+  /// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+  ///
+  /// Copied from [weeklyReservationCount].
+  const WeeklyReservationCountFamily();
+
+  /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
+  /// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+  ///
+  /// Copied from [weeklyReservationCount].
+  WeeklyReservationCountProvider call(DateTime date) {
+    return WeeklyReservationCountProvider(date);
+  }
+
+  @override
+  WeeklyReservationCountProvider getProviderOverride(
+    covariant WeeklyReservationCountProvider provider,
+  ) {
+    return call(provider.date);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'weeklyReservationCountProvider';
+}
+
+/// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
+/// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+///
+/// Copied from [weeklyReservationCount].
+class WeeklyReservationCountProvider extends AutoDisposeFutureProvider<int> {
+  /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
+  /// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+  ///
+  /// Copied from [weeklyReservationCount].
+  WeeklyReservationCountProvider(DateTime date)
+    : this._internal(
+        (ref) => weeklyReservationCount(ref as WeeklyReservationCountRef, date),
+        from: weeklyReservationCountProvider,
+        name: r'weeklyReservationCountProvider',
+        debugGetCreateSourceHash:
+            const bool.fromEnvironment('dart.vm.product')
+                ? null
+                : _$weeklyReservationCountHash,
+        dependencies: WeeklyReservationCountFamily._dependencies,
+        allTransitiveDependencies:
+            WeeklyReservationCountFamily._allTransitiveDependencies,
+        date: date,
+      );
+
+  WeeklyReservationCountProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.date,
+  }) : super.internal();
+
+  final DateTime date;
+
+  @override
+  Override overrideWith(
+    FutureOr<int> Function(WeeklyReservationCountRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: WeeklyReservationCountProvider._internal(
+        (ref) => create(ref as WeeklyReservationCountRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        date: date,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<int> createElement() {
+    return _WeeklyReservationCountProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is WeeklyReservationCountProvider && other.date == date;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, date.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin WeeklyReservationCountRef on AutoDisposeFutureProviderRef<int> {
+  /// The parameter `date` of this provider.
+  DateTime get date;
+}
+
+class _WeeklyReservationCountProviderElement
+    extends AutoDisposeFutureProviderElement<int>
+    with WeeklyReservationCountRef {
+  _WeeklyReservationCountProviderElement(super.provider);
+
+  @override
+  DateTime get date => (origin as WeeklyReservationCountProvider).date;
+}
+
+String _$occupiedSlotsHash() => r'f79f90e68b39dedbe84bbf1b59e1da8a92b42277';
 
 /// Slots ocupados para un día y amenity dados
 ///

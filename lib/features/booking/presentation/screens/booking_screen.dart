@@ -91,8 +91,9 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
         'status': AppConstants.statusConfirmed,
       });
 
-      // Fuerza recarga de reservas en home
+      // Fuerza recarga de reservas en home y cupo semanal
       ref.invalidate(upcomingReservationsProvider);
+      ref.invalidate(weeklyReservationCountProvider);
 
       if (mounted) {
         context.pushReplacement('/confirm', extra: {
@@ -120,7 +121,11 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       occupiedSlotsProvider(amenityId: widget.amenityId, date: _selectedDate),
     );
     final occupied = occupiedAsync.valueOrNull ?? [];
-    final weeklyUsed = ref.watch(weeklyReservationCountProvider).valueOrNull ?? 0;
+
+    // Cupo de la semana del día SELECCIONADO (no siempre la semana actual)
+    final weeklyUsed = ref.watch(
+      weeklyReservationCountProvider(_selectedDate),
+    ).valueOrNull ?? 0;
     final weeklyFull = weeklyUsed >= AppConstants.weeklyReservationLimit;
 
     return Scaffold(
@@ -202,8 +207,22 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                     children: [
                       Text(_dayLabel(_selectedDate),
                           style: AppTextStyles.titleLg),
-                      Text('Toca una hora',
-                          style: AppTextStyles.caption.copyWith(fontSize: 13)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: weeklyFull
+                              ? AppColors.error.withValues(alpha: 0.1)
+                              : AppColors.accentTint,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          '$weeklyUsed/${AppConstants.weeklyReservationLimit} sem.',
+                          style: AppTextStyles.labelSm.copyWith(
+                            color: weeklyFull ? AppColors.error : AppColors.accentDeep,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -219,7 +238,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                     itemCount: _hours.length,
                     itemBuilder: (context, i) {
                       final h = _hours[i];
-                      final isOccupied = occupied.contains(h) || _isPseudoOccupied(i, h);
+                      final isOccupied = occupied.contains(h);
                       final isSelected = _selectedHour == h;
                       return _HourTile(
                         hour: h,
@@ -251,7 +270,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Alcanzaste el límite de 3 reservas esta semana. Disponibles el lunes.',
+                      _weekFullMessage(_selectedDate),
                       style: AppTextStyles.labelSm.copyWith(color: AppColors.error),
                     ),
                   ),
@@ -294,6 +313,27 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  /// Devuelve el lunes de la semana que contiene [date]
+  DateTime _weekStart(DateTime date) {
+    final monday = date.subtract(Duration(days: date.weekday - 1));
+    return DateTime(monday.year, monday.month, monday.day);
+  }
+
+  String _weekFullMessage(DateTime selectedDate) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selectedMonday = _weekStart(selectedDate);
+    final currentMonday  = _weekStart(today);
+
+    if (selectedMonday == currentMonday) {
+      return 'Alcanzaste el límite de 3 reservas esta semana. El lunes abre la próxima.';
+    } else {
+      const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      final nextSun = selectedMonday.add(const Duration(days: 6));
+      return 'Ya tienes 3 reservas la semana del ${selectedMonday.day} al ${nextSun.day} de ${months[nextSun.month - 1]}.';
+    }
+  }
+
   String _mapBookingError(String raw) {
     final msg = raw.toLowerCase();
     if (msg.contains('3 reservas por semana') || msg.contains('weekly')) {
@@ -309,14 +349,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       return 'Sin conexión. Verifica tu internet e intenta de nuevo.';
     }
     return 'No se pudo confirmar la reserva. Intenta de nuevo.';
-  }
-
-  // Ocupación pseudo-aleatoria determinista para la demo
-  // En producción esto viene de Supabase en tiempo real
-  bool _isPseudoOccupied(int dayOffset, int hour) {
-    final s = (dayOffset * 31 + hour * 17 + 7) % 100;
-    final peak = (hour <= 8 || (hour >= 17 && hour <= 19)) ? 55 : 28;
-    return s < peak;
   }
 
   String _dayLabel(DateTime d) {

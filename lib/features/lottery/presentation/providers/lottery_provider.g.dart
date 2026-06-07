@@ -42,7 +42,7 @@ final lotteryWeekStartProvider = AutoDisposeProvider<DateTime>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef LotteryWeekStartRef = AutoDisposeProviderRef<DateTime>;
-String _$myLotteryEntriesHash() => r'1a150ad02745d7f751477e1f83e9190675005546';
+String _$myLotteryEntriesHash() => r'f7a5200ec5e1e0ed243880d9e534395fd57f78b8';
 
 /// See also [myLotteryEntries].
 @ProviderFor(myLotteryEntries)

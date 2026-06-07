@@ -8,6 +8,11 @@ part 'reservations_provider.g.dart';
 String _fmt(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+DateTime _weekStart(DateTime date) {
+  final monday = date.subtract(Duration(days: date.weekday - 1));
+  return DateTime(monday.year, monday.month, monday.day);
+}
+
 /// Reservas próximas del usuario — desde hoy hasta 14 días adelante.
 /// Incluye las de la próxima semana asignadas por sorteo.
 @riverpod
@@ -36,25 +41,24 @@ Future<List<Map<String, dynamic>>> upcomingReservations(Ref ref) async {
   }).toList();
 }
 
-/// Reservas solo de esta semana — para mostrar el cupo semanal (3/semana).
+/// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
+/// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
 @riverpod
-Future<int> weeklyReservationCount(Ref ref) async {
+Future<int> weeklyReservationCount(Ref ref, DateTime date) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return 0;
 
   final supabase = ref.watch(supabaseProvider);
-  final today = DateTime.now();
-  final monday = today.subtract(Duration(days: today.weekday - 1));
-  final weekStart = DateTime(monday.year, monday.month, monday.day);
-  final weekEnd = weekStart.add(const Duration(days: 7));
+  final start = _weekStart(date);
+  final end   = start.add(const Duration(days: 7));
 
   final res = await supabase
       .from(AppConstants.tableReservations)
       .select('id')
       .eq('user_id', user.id)
       .eq('status', AppConstants.statusConfirmed)
-      .gte('reservation_date', _fmt(weekStart))
-      .lt('reservation_date', _fmt(weekEnd));
+      .gte('reservation_date', _fmt(start))
+      .lt('reservation_date', _fmt(end));
 
   return (res as List).length;
 }
