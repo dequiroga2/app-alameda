@@ -78,12 +78,20 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // Cupo semanal
-                ref.watch(weeklyReservationCountProvider(DateTime.now())).when(
-                  data: (count) => _WeeklyQuota(used: count),
-                  loading: () => const _QuotaShimmer(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
+                // Cupo semanal — fin de semana: muestra la PRÓXIMA semana
+                // (la actual ya casi termina y no es accionable)
+                Builder(builder: (context) {
+                  final now = DateTime.now();
+                  final isWeekend = now.weekday >= DateTime.saturday;
+                  final referenceDate = isWeekend
+                      ? _todayDate().add(const Duration(days: 7))
+                      : _todayDate();
+                  return ref.watch(weeklyReservationCountProvider(referenceDate)).when(
+                    data: (count) => _WeeklyQuota(used: count, nextWeek: isWeekend),
+                    loading: () => const _QuotaShimmer(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                }),
                 const SizedBox(height: 16),
 
                 // Próximas reservas
@@ -199,6 +207,12 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
+  /// Solo año/mes/día — sin hora, para que Riverpod cachee correctamente.
+  DateTime _todayDate() {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
+
   String _formatDate(DateTime d) {
     // Formato: "Martes 2 de junio"
     const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -304,13 +318,23 @@ class _AmenityCard extends StatelessWidget {
 }
 
 class _WeeklyQuota extends StatelessWidget {
-  const _WeeklyQuota({required this.used});
+  const _WeeklyQuota({required this.used, this.nextWeek = false});
   final int used;
+  final bool nextWeek;
   static const _limit = 3;
 
   @override
   Widget build(BuildContext context) {
     final remaining = _limit - used;
+    final title = nextWeek ? 'Próxima semana' : 'Esta semana';
+    final subtitle = nextWeek
+        ? (remaining > 0
+            ? 'Te ${remaining == 1 ? 'queda' : 'quedan'} $remaining ${remaining == 1 ? 'reserva' : 'reservas'} para reservar o sortear.'
+            : 'Semana llena — no hay más cupo disponible.')
+        : (remaining > 0
+            ? 'Te ${remaining == 1 ? 'queda' : 'quedan'} $remaining ${remaining == 1 ? 'reserva disponible' : 'reservas disponibles'}.'
+            : 'Alcanzaste el máximo. Desde el sábado puedes planear la próxima.');
+
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -318,13 +342,17 @@ class _WeeklyQuota extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Tus reservas esta semana', style: AppTextStyles.titleMd),
+              Row(children: [
+                Text('Tus reservas · ', style: AppTextStyles.titleMd),
+                Text(title,
+                    style: AppTextStyles.titleMd.copyWith(
+                        color: nextWeek ? AppColors.accentDeep : AppColors.textPrimary)),
+              ]),
               Text('$used de $_limit',
                   style: AppTextStyles.labelMd.copyWith(color: AppColors.textFaint)),
             ],
           ),
           const SizedBox(height: 12),
-          // Pips visuales
           Row(
             children: List.generate(_limit, (i) => Expanded(
               child: Padding(
@@ -341,13 +369,9 @@ class _WeeklyQuota extends StatelessWidget {
             )),
           ),
           const SizedBox(height: 12),
-          Text(
-            remaining > 0
-                ? 'Te ${remaining == 1 ? 'queda' : 'quedan'} $remaining ${remaining == 1 ? 'reserva disponible' : 'reservas disponibles'}.'
-                : 'Alcanzaste el máximo semanal.',
-            style: AppTextStyles.caption.copyWith(
-                color: remaining == 0 ? AppColors.warning : AppColors.textFaint),
-          ),
+          Text(subtitle,
+              style: AppTextStyles.caption.copyWith(
+                  color: remaining == 0 ? AppColors.warning : AppColors.textFaint)),
         ],
       ),
     );

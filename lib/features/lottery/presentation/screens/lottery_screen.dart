@@ -57,15 +57,14 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
       return;
     }
 
-    // Trigger del sorteo si es viernes y aún no se hizo
+    // En viernes: verificar si el sorteo ya corrió (lo lanza pg_cron automáticamente)
     if (phase == LotteryPhase.drawDay) {
-      setState(() => _mode = _Mode.drawLoading);
-      try {
-        await Supabase.instance.client.rpc(
-          'run_lottery_draw',
-          params: {'p_week_start': lotteryFmtDate(weekStart)},
-        );
-      } catch (_) {}
+      final drawDone = await ref.read(lotteryDrawDoneProvider.future);
+      if (!drawDone) {
+        // El cron aún no lo corrió — mostrar pantalla de espera
+        if (mounted) setState(() => _mode = _Mode.resultsStatic);
+        return;
+      }
     }
 
     await _loadEntries();
@@ -305,6 +304,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
             child: Center(child: CircularProgressIndicator()));
       case _Mode.open:
         return _OpenPhaseBody(
+
           weekStart: weekStart,
           onAdd: _addEntry,
           onDelete: _deleteEntry,
@@ -926,16 +926,28 @@ class _ResultsBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (entries.isEmpty) {
+      // Viernes antes del sorteo automático
+      final phase = DateTime.now().weekday == DateTime.friday;
       return AppCard(
         padding: const EdgeInsets.all(32),
         child: Column(children: [
-          const Icon(Icons.inbox_rounded, color: AppColors.textFaint, size: 48),
+          Icon(
+            phase ? Icons.hourglass_top_rounded : Icons.inbox_rounded,
+            color: phase ? AppColors.accentStrong : AppColors.textFaint,
+            size: 48,
+          ),
           const SizedBox(height: 12),
-          Text('No participaste este sorteo',
-              style: AppTextStyles.titleLg, textAlign: TextAlign.center),
+          Text(
+            phase ? 'El sorteo está por realizarse' : 'No participaste este sorteo',
+            style: AppTextStyles.titleLg, textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 6),
-          Text('El sábado abre la inscripción para la próxima semana.',
-              style: AppTextStyles.bodyMd, textAlign: TextAlign.center),
+          Text(
+            phase
+                ? 'Esta tarde se asignarán los horarios de la próxima semana. Vuelve más tarde para ver tus resultados.'
+                : 'El sábado abre la inscripción para la próxima semana.',
+            style: AppTextStyles.bodyMd, textAlign: TextAlign.center,
+          ),
         ]),
       );
     }
