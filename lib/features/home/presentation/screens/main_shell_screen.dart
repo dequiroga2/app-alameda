@@ -55,13 +55,14 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: AppConstants.tableUserNotifications,
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'user_id',
-            value: user.id,
-          ),
+          // Sin filtro server-side — verificamos user_id en el cliente.
+          // Más confiable que el filtro de columna que requiere REPLICA IDENTITY FULL.
           callback: (payload) async {
             final record = payload.newRecord;
+            // Ignorar notificaciones de otros usuarios
+            final notifUserId = record['user_id'] as String?;
+            if (notifUserId != user.id) return;
+
             final title = record['title'] as String? ?? '¡Buenas noticias!';
             final body  = record['body']  as String? ?? '';
             await NotificationService.show(title: title, body: body);
