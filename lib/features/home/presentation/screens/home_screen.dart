@@ -210,7 +210,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   // ── Amenity card ──────────────────────────────────────
                   _AmenityCard(
                     name: 'Cancha de tenis',
-                    schedule: '7:00 a.m. – 9:00 p.m.',
+                    schedule: '6:00 a.m. – 8:00 p.m.',
                     status: courtStatus,
                     onBook: () => context.push('/booking/tenis'),
                   ),
@@ -324,7 +324,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   _CourtStatus _computeStatus(DateTime now, Map<int, int> slotMap) {
     // Escenario "Ocupada" fuerza el estado aunque no haya reserva en Supabase
     if (kActiveScenario == DemoScenario.occupied) return _CourtStatus.occupied;
-    if (now.hour < 7 || now.hour >= 21) return _CourtStatus.closed;
+    if (now.hour < 6 || now.hour >= 20) return _CourtStatus.closed;
     if (slotMap.containsKey(now.hour)) return _CourtStatus.occupied;
     return _CourtStatus.available;
   }

@@ -3,8 +3,8 @@ class AppConstants {
   static const int weeklyReservationLimit = 3;
   static const int dailyReservationLimit = 1;
   static const int bookingWindowDays = 14; // días hacia adelante reservables
-  static const int firstBookingHour = 7;   // 7:00 AM
-  static const int lastBookingHour = 20;   // último bloque 20:00-21:00
+  static const int firstBookingHour = 6;   // 6:00 AM
+  static const int lastBookingHour = 19;   // último bloque 19:00-20:00
   static const int bookingDurationHours = 1;
 
   // Torres del conjunto
