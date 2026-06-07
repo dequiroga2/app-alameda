@@ -30,9 +30,7 @@ dependencies:
   shared_preferences: ^2.3.5
   flutter_secure_storage: ^9.2.4
 
-  # Push notifications
-  firebase_core: ^3.13.0
-  firebase_messaging: ^15.2.5
+  # Local notifications (no requiere FCM ni Apple Developer)
   flutter_local_notifications: ^19.0.0
 
   # Connectivity
