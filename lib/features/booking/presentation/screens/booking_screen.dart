@@ -13,7 +13,7 @@ import '../../../auth/presentation/providers/auth_provider.dart';
 import '../providers/reservations_provider.dart';
 
 // Estado visual de cada tile de hora
-enum _SlotState { free, secondAvailable, fullyOccupied, past }
+enum _SlotState { free, secondAvailable, fullyOccupied, past, myFirst, mySecond }
 
 class BookingScreen extends ConsumerStatefulWidget {
   const BookingScreen({super.key, required this.amenityId});
@@ -26,9 +26,10 @@ class BookingScreen extends ConsumerStatefulWidget {
 class _BookingScreenState extends ConsumerState<BookingScreen> {
   late DateTime _selectedDate;
   int? _selectedHour;
-  bool _selectedIsSecond = false; // ¿La hora seleccionada es 2da opción?
+  bool _selectedIsSecond = false;
   bool _confirming = false;
   RealtimeChannel? _channel;
+  Map<int, int> _mySlots = {}; // hora → slot_option propio (1 o 2)
 
   final _amenityName = 'Cancha de tenis';
 
@@ -37,6 +38,31 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     super.initState();
     _selectedDate = DateTime.now();
     _subscribeToSlots();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadMySlots());
+  }
+
+  /// Carga las reservas propias del usuario para el día seleccionado.
+  Future<void> _loadMySlots() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+    final dateStr =
+        '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+    try {
+      final res = await Supabase.instance.client
+          .from(AppConstants.tableReservations)
+          .select('start_hour, slot_option')
+          .eq('amenity_id', widget.amenityId)
+          .eq('reservation_date', dateStr)
+          .eq('user_id', user.id)
+          .eq('status', AppConstants.statusConfirmed);
+      final map = <int, int>{};
+      for (final row in (res as List)) {
+        final hour   = (row as Map)['start_hour'] as int;
+        final option = (row['slot_option'] as int?) ?? 1;
+        map[hour] = option;
+      }
+      if (mounted) setState(() => _mySlots = map);
+    } catch (_) {}
   }
 
   /// Suscripción Realtime: cuando alguien reserva o cancela,
@@ -49,7 +75,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
           schema: 'public',
           table: AppConstants.tableReservations,
           callback: (_) {
-            // Invalida el provider para la fecha actualmente visible
             if (mounted) {
               ref.invalidate(
                 occupiedSlotsProvider(
@@ -57,7 +82,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                   date: _selectedDate,
                 ),
               );
-              // Si la hora seleccionada ya no está disponible, deselecciona
+              _loadMySlots();
               _clearSelectionIfUnavailable();
             }
           },
@@ -243,11 +268,15 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                         date: day,
                         index: i,
                         isSelected: isSelected,
-                        onTap: () => setState(() {
-                          _selectedDate = day;
-                          _selectedHour = null;
-                          _selectedIsSecond = false;
-                        }),
+                        onTap: () {
+                          setState(() {
+                            _selectedDate = day;
+                            _selectedHour = null;
+                            _selectedIsSecond = false;
+                            _mySlots = {};
+                          });
+                          _loadMySlots();
+                        },
                       );
                     },
                   ),
@@ -310,17 +339,24 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                       final isPast = pastHours.contains(h);
                       final optionsTaken = slotMap[h] ?? 0;
 
+                      final myOption = _mySlots[h];
                       final slotState = isPast
                           ? _SlotState.past
-                          : optionsTaken >= 2
-                              ? _SlotState.fullyOccupied
-                              : optionsTaken == 1
-                                  ? _SlotState.secondAvailable
-                                  : _SlotState.free;
+                          : myOption == 1
+                              ? _SlotState.myFirst
+                              : myOption == 2
+                                  ? _SlotState.mySecond
+                                  : optionsTaken >= 2
+                                      ? _SlotState.fullyOccupied
+                                      : optionsTaken == 1
+                                          ? _SlotState.secondAvailable
+                                          : _SlotState.free;
 
                       final canTap = !weeklyFull &&
                           slotState != _SlotState.past &&
-                          slotState != _SlotState.fullyOccupied;
+                          slotState != _SlotState.fullyOccupied &&
+                          slotState != _SlotState.myFirst &&
+                          slotState != _SlotState.mySecond;
 
                       return _HourTile(
                         hour: h,
@@ -533,7 +569,6 @@ class _SecondOptionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -551,7 +586,13 @@ class _SecondOptionLabel extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Text(label, style: AppTextStyles.titleMd),
+        Flexible(
+          child: Text(
+            label,
+            style: AppTextStyles.titleMd,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }
@@ -696,6 +737,18 @@ class _HourTile extends StatelessWidget {
           fgSoft = AppColors.textFaint;
           subLabel = 'Pasado';
           borderColor = AppColors.hair;
+        case _SlotState.myFirst:
+          bg = AppColors.accentTint;
+          fgStrong = AppColors.accentDeep;
+          fgSoft = AppColors.accentDeep.withValues(alpha: 0.75);
+          subLabel = 'Tu reserva ✓';
+          borderColor = AppColors.accentStrong.withValues(alpha: 0.4);
+        case _SlotState.mySecond:
+          bg = AppColors.warning.withValues(alpha: 0.08);
+          fgStrong = AppColors.warning;
+          fgSoft = AppColors.warning.withValues(alpha: 0.75);
+          subLabel = 'Tu 2ª opción ✓';
+          borderColor = AppColors.warning.withValues(alpha: 0.35);
       }
     }
 
