@@ -426,9 +426,9 @@ class _OpenPhaseBody extends ConsumerStatefulWidget {
 }
 
 class _OpenPhaseBodyState extends ConsumerState<_OpenPhaseBody> {
-  // Estado local optimista — se actualiza al instante al arrastrar,
-  // luego se sincroniza con DB. null = usar datos del provider.
-  List<Map<String, dynamic>>? _localEntries;
+  // Lista local: inicializada desde el provider, luego gestionada aquí.
+  // El drag la modifica al instante y sincroniza DB en background.
+  List<Map<String, dynamic>>? _entries;
 
   @override
   Widget build(BuildContext context) {
@@ -466,8 +466,14 @@ class _OpenPhaseBodyState extends ConsumerState<_OpenPhaseBody> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (_, __) => const SizedBox.shrink(),
           data: (providerEntries) {
-            // Usar estado local si hay un reorder en curso, si no el del provider
-            final entries = _localEntries ?? providerEntries;
+            // Sincronizar desde provider solo cuando cambia la cantidad
+            // (agregar / borrar). El drag maneja el orden localmente.
+            if (_entries == null || _entries!.length != providerEntries.length) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() => _entries = List.from(providerEntries));
+              });
+            }
+            final entries = _entries ?? providerEntries;
             final canAdd = entries.length < AppConstants.lotteryMaxEntries;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -555,23 +561,18 @@ class _OpenPhaseBodyState extends ConsumerState<_OpenPhaseBody> {
                       ),
                     ),
                     onReorder: (oldIndex, newIndex) {
+                      // Flutter pasa newIndex considerando que el item ya fue
+                      // removido del oldIndex — ajustar solo cuando baja
                       if (newIndex > oldIndex) newIndex--;
-                      final reordered = [...entries];
+                      final reordered = List<Map<String, dynamic>>.from(entries);
                       final item = reordered.removeAt(oldIndex);
                       reordered.insert(newIndex, item);
-                      // Actualización optimista inmediata — UI responde al instante
-                      setState(() => _localEntries = reordered);
-                      // Sync con DB → luego invalidar → limpiar local
-                      widget.onReorder(reordered).then((_) {
-                        if (!mounted) return;
-                        // Primero limpia local, luego invalida para que el
-                        // provider refetch ya encuentre los datos nuevos en DB
-                        setState(() => _localEntries = null);
-                        ref.invalidate(myLotteryEntriesProvider);
-                      }).catchError((_) {
-                        // Si el DB falló, revertir al orden original
-                        if (mounted) setState(() => _localEntries = null);
-                      });
+                      // Instantáneo: actualiza la UI sin esperar al DB
+                      setState(() => _entries = reordered);
+                      // Sync DB en background — sin invalidar provider
+                      // (el provider recargará con prioridades correctas la
+                      // próxima vez que el usuario agregue o borre una entrada)
+                      widget.onReorder(reordered);
                     },
                     itemCount: entries.length,
                     itemBuilder: (_, i) => Padding(
