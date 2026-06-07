@@ -406,48 +406,33 @@ class _LiveClockState extends State<_LiveClock> {
     final m = _now.minute.toString().padLeft(2, '0');
     final s = _now.second.toString().padLeft(2, '0');
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.hair, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.accentDeep.withValues(alpha: 0.06),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.access_time_rounded,
+            size: 12, color: AppColors.accentDeep),
+        const SizedBox(width: 5),
+        Text(
+          '$h:$m:',
+          style: AppTextStyles.labelSm.copyWith(
+            color: AppColors.accentDeep.withValues(alpha: 0.9),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+            fontFamilyFallback: const ['monospace'],
           ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.access_time_rounded,
-              size: 12, color: AppColors.accentDeep),
-          const SizedBox(width: 5),
-          Text(
-            '$h:$m:',
-            style: AppTextStyles.labelSm.copyWith(
-              color: AppColors.accentDeep.withValues(alpha: 0.9),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-              fontFamilyFallback: const ['monospace'],
-            ),
+        ),
+        Text(
+          s,
+          style: AppTextStyles.labelSm.copyWith(
+            color: AppColors.accentDeep.withValues(alpha: 0.55),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+            fontFamilyFallback: const ['monospace'],
           ),
-          Text(
-            s,
-            style: AppTextStyles.labelSm.copyWith(
-              color: AppColors.accentDeep.withValues(alpha: 0.55),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-              fontFamilyFallback: const ['monospace'],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -620,27 +605,18 @@ class _AmenityCard extends StatelessWidget {
             height: 140,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
-              gradient: LinearGradient(
+              gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: status == _CourtStatus.closed
-                    ? [AppColors.hair, AppColors.hair.withValues(alpha: 0.6)]
-                    : [AppColors.accentTint, AppColors.accentSoft],
+                colors: [AppColors.accentTint, AppColors.accentSoft],
               ),
             ),
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    status == _CourtStatus.closed
-                        ? Icons.lock_outline_rounded
-                        : Icons.sports_tennis_rounded,
-                    color: status == _CourtStatus.closed
-                        ? AppColors.textFaint
-                        : AppColors.accentDeep,
-                    size: 48,
-                  ),
+                  const Icon(Icons.sports_tennis_rounded,
+                      color: AppColors.accentDeep, size: 48),
                   const SizedBox(height: 8),
                   Text(
                     'foto cancha de tenis',
@@ -695,13 +671,8 @@ class _AmenityCard extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              Icon(
-                status == _CourtStatus.closed
-                    ? Icons.lock_clock_rounded
-                    : Icons.access_time_rounded,
-                size: 15,
-                color: AppColors.textFaint,
-              ),
+              const Icon(Icons.access_time_rounded,
+                  size: 15, color: AppColors.textFaint),
               const SizedBox(width: 6),
               Text('Horario $schedule', style: AppTextStyles.bodyMd),
             ],
