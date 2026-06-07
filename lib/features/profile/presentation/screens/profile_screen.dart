@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/wave_header.dart';
@@ -104,7 +105,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ...[
                         'Máximo ${AppConstants.weeklyReservationLimit} reservas por semana',
                         'Solo 1 reserva por día',
-                        'Bloques de 1 hora, de 7 a.m. a 9 p.m.',
+                        'Bloques de 1 hora, de 6 a.m. a 8 p.m.',
                       ].map((rule) => Padding(
                             padding: const EdgeInsets.only(bottom: 7),
                             child: Row(
@@ -124,6 +125,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ),
                 const SizedBox(height: 20),
+                // ── TEST: Verificar notificaciones iOS ──────────────────
+                AppButton(
+                  label: 'Probar notificación',
+                  onPressed: () async {
+                    await NotificationService.show(
+                      title: '¡La Alameda!',
+                      body: 'Tu segunda opción fue confirmada 🎉',
+                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Notificación enviada — ¿apareció el banner?'),
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
+                    }
+                  },
+                  variant: AppButtonVariant.secondary,
+                  fullWidth: true,
+                  icon: Icons.notifications_active_rounded,
+                ),
+                const SizedBox(height: 12),
+                // ────────────────────────────────────────────────────────
                 AppButton(
                   label: 'Cerrar sesión',
                   onPressed: () async {
