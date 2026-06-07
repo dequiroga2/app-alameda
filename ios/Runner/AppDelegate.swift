@@ -5,6 +5,9 @@ import UserNotifications
 @main
 @objc class AppDelegate: FlutterAppDelegate {
 
+  // Guardamos referencia al canal para usarla desde didReceive
+  private var notifChannel: FlutterMethodChannel?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -21,6 +24,8 @@ import UserNotifications
         name: "com.laalameda/notifications",
         binaryMessenger: controller.binaryMessenger
       )
+      notifChannel = channel
+
       channel.setMethodCallHandler { [weak self] call, result in
         switch call.method {
 
@@ -29,9 +34,7 @@ import UserNotifications
             options: [.alert, .badge, .sound]
           ) { granted, error in
             DispatchQueue.main.async {
-              if let error = error {
-                print("🔔 Permission error: \(error)")
-              }
+              if let error = error { print("🔔 Permission error: \(error)") }
               print("🔔 iOS permission granted: \(granted)")
               result(granted)
             }
@@ -41,7 +44,7 @@ import UserNotifications
           guard
             let args = call.arguments as? [String: String],
             let title = args["title"],
-            let body = args["body"]
+            let body  = args["body"]
           else {
             result(FlutterError(code: "INVALID_ARGS", message: "title/body required", details: nil))
             return
@@ -57,6 +60,8 @@ import UserNotifications
     return result
   }
 
+  // MARK: - Schedule notification
+
   private func scheduleNotification(title: String, body: String, flutterResult: @escaping FlutterResult) {
     let content = UNMutableNotificationContent()
     content.title = title
@@ -66,7 +71,7 @@ import UserNotifications
       content.interruptionLevel = .active
     }
 
-    // Trigger de 0.5 s — suficiente para que willPresent se llame correctamente
+    // Trigger de 0.5 s — garantiza que willPresent se invoque correctamente
     let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.5, repeats: false)
     let id      = "la-alameda-\(Int(Date().timeIntervalSince1970))"
     let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
@@ -74,7 +79,7 @@ import UserNotifications
     UNUserNotificationCenter.current().add(request) { error in
       DispatchQueue.main.async {
         if let error = error {
-          print("🔔 Error scheduling notification: \(error.localizedDescription)")
+          print("🔔 Error scheduling: \(error.localizedDescription)")
           flutterResult(FlutterError(code: "NOTIF_ERROR", message: error.localizedDescription, details: nil))
         } else {
           print("🔔 Notification scheduled OK — id: \(id)")
@@ -84,8 +89,9 @@ import UserNotifications
     }
   }
 
-  // Sin este override FlutterAppDelegate responde UNNotificationPresentationOptionNone
-  // → ningún banner aparece cuando la app está en foreground.
+  // MARK: - UNUserNotificationCenterDelegate
+
+  /// Sin este override, FlutterAppDelegate llama completionHandler([]) → sin banner en foreground.
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification,
@@ -99,11 +105,17 @@ import UserNotifications
     }
   }
 
+  /// El usuario pulsó la notificación → avisar a Flutter para navegar a Mis Reservas.
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
+    print("🔔 [AppDelegate] didReceive (tap) — id: \(response.notification.request.identifier)")
+    // Pequeño delay para que Flutter esté listo si la app estaba en background
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+      self?.notifChannel?.invokeMethod("onTapped", arguments: nil)
+    }
     completionHandler()
   }
 }

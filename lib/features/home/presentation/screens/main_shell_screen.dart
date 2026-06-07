@@ -46,6 +46,10 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Cuando el usuario pulsa una notificación → ir a Mis Reservas (tab 2)
+      NotificationService.onTapped = () {
+        if (mounted) ref.read(shellTabProvider.notifier).setTab(2);
+      };
       _setupRealtime();
       _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
         if (data.event == AuthChangeEvent.tokenRefreshed) {

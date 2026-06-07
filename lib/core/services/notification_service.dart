@@ -16,10 +16,21 @@ class NotificationService {
 
   static bool _initialized = false;
 
+  /// Callback que se ejecuta cuando el usuario pulsa una notificación.
+  /// Regístralo desde main_shell_screen para navegar a la pantalla correcta.
+  static VoidCallback? onTapped;
+
   static Future<void> init() async {
     if (_initialized) return;
 
     if (Platform.isIOS) {
+      // Escuchar el tap de notificación desde Swift
+      _iosChannel.setMethodCallHandler((call) async {
+        if (call.method == 'onTapped') {
+          debugPrint('🔔 Notification tapped — navigating');
+          onTapped?.call();
+        }
+      });
       try {
         final granted = await _iosChannel.invokeMethod<bool>('requestPermission');
         debugPrint('🔔 iOS permission granted: $granted');
