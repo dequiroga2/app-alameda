@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -24,6 +25,7 @@ class MainShellScreen extends ConsumerStatefulWidget {
 
 class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   RealtimeChannel? _channel;
+  StreamSubscription<AuthState>? _authSub;
 
   static const _tabs = [
     _TabItem(icon: Icons.home_rounded, label: 'Inicio'),
@@ -42,7 +44,18 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _setupRealtime());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupRealtime();
+      // Reconectar Realtime cuando el token JWT se renueva automáticamente
+      _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+        if (data.event == AuthChangeEvent.tokenRefreshed) {
+          debugPrint('🔔 Token renovado — reconectando Realtime');
+          _channel?.unsubscribe();
+          _channel = null;
+          _setupRealtime();
+        }
+      });
+    });
   }
 
   Future<void> _setupRealtime() async {
@@ -91,6 +104,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _channel?.unsubscribe();
     super.dispose();
   }
