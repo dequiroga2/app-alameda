@@ -754,6 +754,8 @@ class _ReservationTile extends StatelessWidget {
     final hour = reservation['start_hour'] as int;
     final amenityName =
         reservation['amenity_name'] as String? ?? 'Zona común';
+    final slotOption = (reservation['slot_option'] as int?) ?? 1;
+    final isSecond = slotOption == 2;
 
     const days = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
     final dayLabel = days[date.weekday % 7];
@@ -764,11 +766,12 @@ class _ReservationTile extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
+            // ── Fecha (color cambia si es 2ª opción) ─────────────────────
             Container(
               width: 52,
               height: 56,
               decoration: BoxDecoration(
-                color: AppColors.accentTint,
+                color: isSecond ? AppColors.warningTint : AppColors.accentTint,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -776,23 +779,54 @@ class _ReservationTile extends StatelessWidget {
                 children: [
                   Text(
                     dayLabel.toUpperCase(),
-                    style: AppTextStyles.labelSm
-                        .copyWith(color: AppColors.accentDeep, fontSize: 10),
+                    style: AppTextStyles.labelSm.copyWith(
+                      color: isSecond ? AppColors.warning : AppColors.accentDeep,
+                      fontSize: 10,
+                    ),
                   ),
                   Text(
                     '${date.day}',
-                    style: AppTextStyles.headlineSm
-                        .copyWith(color: AppColors.accentDeep),
+                    style: AppTextStyles.headlineSm.copyWith(
+                      color: isSecond ? AppColors.warning : AppColors.accentDeep,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 14),
+            // ── Info + badge ──────────────────────────────────────────────
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(amenityName, style: AppTextStyles.titleMd),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(amenityName,
+                            style: AppTextStyles.titleMd,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      if (isSecond) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.warningTint,
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            '2ª opción',
+                            style: AppTextStyles.labelSm.copyWith(
+                              color: AppColors.warning,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 2),
                   Text(_formatRange(hour), style: AppTextStyles.bodyMd),
                 ],
