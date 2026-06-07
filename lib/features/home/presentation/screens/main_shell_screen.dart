@@ -26,6 +26,7 @@ class MainShellScreen extends ConsumerStatefulWidget {
 class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   RealtimeChannel? _channel;
   StreamSubscription<AuthState>? _authSub;
+  OverlayEntry? _bannerEntry;
 
   static const _tabs = [
     _TabItem(icon: Icons.home_rounded, label: 'Inicio'),
@@ -46,10 +47,8 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _setupRealtime();
-      // Reconectar Realtime cuando el token JWT se renueva automáticamente
       _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
         if (data.event == AuthChangeEvent.tokenRefreshed) {
-          debugPrint('🔔 Token renovado — reconectando Realtime');
           _channel?.unsubscribe();
           _channel = null;
           _setupRealtime();
@@ -69,7 +68,6 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
           schema: 'public',
           table: AppConstants.tableUserNotifications,
           callback: (_) async {
-            debugPrint('🔔 [Realtime] user_notifications event received');
             try {
               final rows = await Supabase.instance.client
                   .from(AppConstants.tableUserNotifications)
@@ -79,33 +77,64 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
                   .order('created_at', ascending: false)
                   .limit(5);
 
-              debugPrint('🔔 [Realtime] unread rows: ${(rows as List).length}');
-
-              for (final notif in rows) {
+              for (final notif in (rows as List)) {
                 final title = notif['title'] as String? ?? '¡Buenas noticias!';
                 final body  = notif['body']  as String? ?? '';
-                debugPrint('🔔 Showing notification: $title');
+
+                // Banner in-app (funciona en todos los simuladores y dispositivos)
+                if (mounted) _showInAppBanner(title, body);
+
+                // Notificación nativa (para cuando la app está en background)
                 await NotificationService.show(title: title, body: body);
+
                 await Supabase.instance.client
                     .from(AppConstants.tableUserNotifications)
                     .update({'read': true})
                     .eq('id', notif['id'] as String);
               }
               ref.invalidate(unreadNotificationsProvider);
-            } catch (e) {
-              debugPrint('🔔 [Realtime] error: $e');
-            }
+            } catch (_) {}
           },
         )
-        .subscribe((status, error) {
-          debugPrint('🔔 [Realtime] channel status: $status — error: $error');
-        });
+        .subscribe();
+  }
+
+  /// Banner que se desliza desde arriba — funciona en cualquier iOS/Android.
+  void _showInAppBanner(String title, String body) {
+    _bannerEntry?.remove();
+    _bannerEntry = null;
+
+    final overlay = Overlay.of(context);
+    late OverlayEntry entry;
+
+    entry = OverlayEntry(
+      builder: (_) => _InAppBanner(
+        title: title,
+        body: body,
+        onDismiss: () {
+          entry.remove();
+          if (_bannerEntry == entry) _bannerEntry = null;
+        },
+      ),
+    );
+
+    overlay.insert(entry);
+    _bannerEntry = entry;
+
+    // Auto-dismiss después de 4 segundos
+    Future.delayed(const Duration(seconds: 4), () {
+      if (entry.mounted) {
+        entry.remove();
+        if (_bannerEntry == entry) _bannerEntry = null;
+      }
+    });
   }
 
   @override
   void dispose() {
     _authSub?.cancel();
     _channel?.unsubscribe();
+    _bannerEntry?.remove();
     super.dispose();
   }
 
@@ -169,6 +198,134 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     );
   }
 }
+
+// ── In-App Notification Banner ────────────────────────────────────────────────
+
+class _InAppBanner extends StatefulWidget {
+  const _InAppBanner({
+    required this.title,
+    required this.body,
+    required this.onDismiss,
+  });
+  final String title;
+  final String body;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_InAppBanner> createState() => _InAppBannerState();
+}
+
+class _InAppBannerState extends State<_InAppBanner>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<Offset> _slide;
+  late Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      duration: const Duration(milliseconds: 350),
+      vsync: this,
+    );
+    _slide = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
+    return Positioned(
+      top: top + 12,
+      left: 16,
+      right: 16,
+      child: SlideTransition(
+        position: _slide,
+        child: FadeTransition(
+          opacity: _fade,
+          child: GestureDetector(
+            onTap: widget.onDismiss,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    // Ícono de la app
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.accentStrong,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.sports_tennis_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.title,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.body,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w400,
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Tab item ──────────────────────────────────────────────────────────────────
 
 class _TabItem {
   const _TabItem({required this.icon, required this.label});
