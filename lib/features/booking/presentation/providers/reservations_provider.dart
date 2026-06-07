@@ -42,7 +42,7 @@ Future<List<Map<String, dynamic>>> upcomingReservations(Ref ref) async {
 }
 
 /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
-/// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+/// Cuenta tanto primera como segunda opción (ambas ocupan cupo semanal).
 @riverpod
 Future<int> weeklyReservationCount(Ref ref, DateTime date) async {
   final user = ref.watch(currentUserProvider);
@@ -63,9 +63,12 @@ Future<int> weeklyReservationCount(Ref ref, DateTime date) async {
   return (res as List).length;
 }
 
-/// Slots ocupados para un día y amenity dados
+/// Slots ocupados para un día y amenity dados.
+/// Devuelve Map(hora → opciones_tomadas):
+///   1 = solo primera opción tomada (segunda aún disponible)
+///   2 = ambas opciones tomadas (completamente ocupado)
 @riverpod
-Future<List<int>> occupiedSlots(
+Future<Map<int, int>> occupiedSlots(
   Ref ref, {
   required String amenityId,
   required DateTime date,
@@ -74,10 +77,16 @@ Future<List<int>> occupiedSlots(
 
   final res = await supabase
       .from(AppConstants.tableReservations)
-      .select('start_hour')
+      .select('start_hour, slot_option')
       .eq('amenity_id', amenityId)
       .eq('reservation_date', _fmt(date))
       .eq('status', AppConstants.statusConfirmed);
 
-  return (res as List).map((e) => (e as Map)['start_hour'] as int).toList();
+  final map = <int, int>{};
+  for (final row in (res as List)) {
+    final hour   = (row as Map)['start_hour'] as int;
+    final option = (row['slot_option'] as int?) ?? 1;
+    if ((map[hour] ?? 0) < option) map[hour] = option;
+  }
+  return map;
 }

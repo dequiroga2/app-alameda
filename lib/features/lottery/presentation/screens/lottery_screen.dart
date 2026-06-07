@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import '../../../../core/config/demo_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -110,8 +110,10 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
     final weekStart = ref.read(lotteryWeekStartProvider);
+    final weekEnd = weekStart.add(const Duration(days: 7));
 
-    final res = await Supabase.instance.client
+    // 1. Cargar entradas del sorteo
+    final entriesRes = await Supabase.instance.client
         .from(AppConstants.tableLotteryEntries)
         .select()
         .eq('user_id', user.id)
@@ -119,7 +121,33 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
         .order('slot_date')
         .order('start_hour');
 
-    _entries = List<Map<String, dynamic>>.from(res as List);
+    final entries = List<Map<String, dynamic>>.from(entriesRes as List);
+
+    // 2. Cargar reservas confirmadas de esta semana para detectar 2ª opción
+    final resvRes = await Supabase.instance.client
+        .from(AppConstants.tableReservations)
+        .select('reservation_date, start_hour, slot_option')
+        .eq('user_id', user.id)
+        .eq('status', AppConstants.statusConfirmed)
+        .gte('reservation_date', lotteryFmtDate(weekStart))
+        .lt('reservation_date', lotteryFmtDate(weekEnd));
+
+    final reservations = List<Map<String, dynamic>>.from(resvRes as List);
+
+    // 3. Para cada entrada 'lost', marcar si tiene 2ª opción asignada
+    _entries = entries.map((e) {
+      final map = Map<String, dynamic>.from(e);
+      if (e['status'] == 'lost') {
+        final slotDate  = e['slot_date'] as String;
+        final startHour = e['start_hour'] as int;
+        final hasSecond = reservations.any((r) =>
+          r['reservation_date'] == slotDate &&
+          r['start_hour'] == startHour &&
+          (r['slot_option'] as int?) == 2);
+        map['got_second_option'] = hasSecond;
+      }
+      return map;
+    }).toList();
   }
 
   Future<void> _addEntry(String slotDate, int hour, int priority) async {
@@ -175,7 +203,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
         params: {'p_week_start': lotteryFmtDate(weekStart)},
       );
     } catch (e) {
-      if (kDebugMode) {
+      if (kActiveScenario.isActive) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             backgroundColor: AppColors.error,
@@ -329,7 +357,7 @@ class _LotteryScreenState extends ConsumerState<LotteryScreen> {
               ),
             ),
           ),
-          if (kDebugMode)
+          if (kActiveScenario.isActive)
             SliverToBoxAdapter(
               child: _DebugPanel(
                 current: _debugPhase,
@@ -1283,15 +1311,67 @@ class _ResultCardState extends State<_ResultCard>
       );
     }
 
-    // Determinar razón de pérdida
-    String lostReason = '';
-    if (!won) {
+    // Determinar resultado: won / secondOption / lostSameDay / lostOutright
+    final gotSecond = !won && (widget.entry['got_second_option'] as bool? ?? false);
+
+    String? lostReason;
+    if (!won && !gotSecond) {
       final slotDate = widget.entry['slot_date'] as String;
       final wonSameDay = widget.allEntries.any(
-        (e) => e['slot_date'] == slotDate && e['status'] == 'won');
+          (e) => e['slot_date'] == slotDate && e['status'] == 'won');
       lostReason = wonSameDay
           ? 'Ya ganaste otro horario ese día'
           : 'Otro residente ganó el sorteo';
+    }
+
+    // Colores y textos según resultado
+    final Color cardBg;
+    final Color cardBorder;
+    final Color iconBg;
+    final Color iconFg;
+    final IconData iconData;
+    final String titleText;
+    final Color titleColor;
+    final Widget? trailingIcon;
+
+    if (won) {
+      cardBg     = AppColors.accentTint;
+      cardBorder = AppColors.accentStrong;
+      iconBg     = AppColors.accentStrong;
+      iconFg     = Colors.white;
+      iconData   = Icons.emoji_events_rounded;
+      titleText  = '¡Ganaste!';
+      titleColor = AppColors.accentDeep;
+      trailingIcon = const Icon(Icons.check_circle_rounded,
+          color: AppColors.accentStrong, size: 22);
+    } else if (gotSecond) {
+      cardBg     = AppColors.warning.withValues(alpha: 0.08);
+      cardBorder = AppColors.warning.withValues(alpha: 0.5);
+      iconBg     = AppColors.warning.withValues(alpha: 0.18);
+      iconFg     = AppColors.warning;
+      iconData   = Icons.bookmark_added_rounded;
+      titleText  = '2ª opción';
+      titleColor = AppColors.warning;
+      trailingIcon = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.warning.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text('En espera',
+            style: AppTextStyles.labelSm.copyWith(
+                color: AppColors.warning, fontSize: 10,
+                fontWeight: FontWeight.w700)),
+      );
+    } else {
+      cardBg     = AppColors.background;
+      cardBorder = AppColors.hair;
+      iconBg     = AppColors.hair;
+      iconFg     = AppColors.textFaint;
+      iconData   = Icons.close_rounded;
+      titleText  = 'No quedaste';
+      titleColor = AppColors.textSecondary;
+      trailingIcon = null;
     }
 
     // Revealed card
@@ -1300,51 +1380,43 @@ class _ResultCardState extends State<_ResultCard>
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: won ? AppColors.accentTint : AppColors.background,
+          color: cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: won ? AppColors.accentStrong : AppColors.hair,
-            width: won ? 2 : 1.5,
-          ),
+          border: Border.all(color: cardBorder, width: won ? 2 : 1.5),
         ),
         child: Row(children: [
           Container(
             width: 48, height: 48,
             decoration: BoxDecoration(
-              color: won ? AppColors.accentStrong : AppColors.hair,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              won ? Icons.emoji_events_rounded : Icons.close_rounded,
-              color: won ? Colors.white : AppColors.textFaint,
-              size: 24,
-            ),
+                color: iconBg, borderRadius: BorderRadius.circular(12)),
+            child: Icon(iconData, color: iconFg, size: 24),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  won ? '¡Ganaste!' : 'No quedaste',
-                  style: AppTextStyles.titleMd.copyWith(
-                    color: won ? AppColors.accentDeep : AppColors.textSecondary,
-                  ),
-                ),
+                Text(titleText,
+                    style: AppTextStyles.titleMd.copyWith(color: titleColor)),
                 Text('$dateLabel · ${fmt(hour)} – ${fmt(hour + 1)}',
                     style: AppTextStyles.bodyMd),
-                if (!won) ...[
-                  const SizedBox(height: 3),
+                const SizedBox(height: 3),
+                if (gotSecond)
+                  Text('Si la primera opción cancela, la cancha es tuya',
+                      style: AppTextStyles.caption.copyWith(
+                          color: AppColors.warning.withValues(alpha: 0.85),
+                          fontSize: 11))
+                else if (lostReason != null)
                   Text(lostReason,
                       style: AppTextStyles.caption.copyWith(
                           color: AppColors.textFaint, fontSize: 11)),
-                ],
               ],
             ),
           ),
-          if (won)
-            const Icon(Icons.check_circle_rounded,
-                color: AppColors.accentStrong, size: 22),
+          if (trailingIcon != null) ...[
+            const SizedBox(width: 8),
+            trailingIcon,
+          ],
         ]),
       ),
     );

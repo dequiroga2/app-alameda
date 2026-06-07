@@ -55,25 +55,25 @@ class _SystemHash {
 }
 
 /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
-/// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+/// Cuenta tanto primera como segunda opción (ambas ocupan cupo semanal).
 ///
 /// Copied from [weeklyReservationCount].
 @ProviderFor(weeklyReservationCount)
 const weeklyReservationCountProvider = WeeklyReservationCountFamily();
 
 /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
-/// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+/// Cuenta tanto primera como segunda opción (ambas ocupan cupo semanal).
 ///
 /// Copied from [weeklyReservationCount].
 class WeeklyReservationCountFamily extends Family<AsyncValue<int>> {
   /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
-  /// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+  /// Cuenta tanto primera como segunda opción (ambas ocupan cupo semanal).
   ///
   /// Copied from [weeklyReservationCount].
   const WeeklyReservationCountFamily();
 
   /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
-  /// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+  /// Cuenta tanto primera como segunda opción (ambas ocupan cupo semanal).
   ///
   /// Copied from [weeklyReservationCount].
   WeeklyReservationCountProvider call(DateTime date) {
@@ -103,12 +103,12 @@ class WeeklyReservationCountFamily extends Family<AsyncValue<int>> {
 }
 
 /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
-/// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+/// Cuenta tanto primera como segunda opción (ambas ocupan cupo semanal).
 ///
 /// Copied from [weeklyReservationCount].
 class WeeklyReservationCountProvider extends AutoDisposeFutureProvider<int> {
   /// Cuántas reservas confirmadas tiene el usuario en la semana que contiene [date].
-  /// Pasa DateTime.now() para la semana actual, o la fecha seleccionada en booking.
+  /// Cuenta tanto primera como segunda opción (ambas ocupan cupo semanal).
   ///
   /// Copied from [weeklyReservationCount].
   WeeklyReservationCountProvider(DateTime date)
@@ -191,24 +191,36 @@ class _WeeklyReservationCountProviderElement
   DateTime get date => (origin as WeeklyReservationCountProvider).date;
 }
 
-String _$occupiedSlotsHash() => r'f79f90e68b39dedbe84bbf1b59e1da8a92b42277';
+String _$occupiedSlotsHash() => r'dd1b49c2b9ee6464b01990fd14198f190d508bcb';
 
-/// Slots ocupados para un día y amenity dados
+/// Slots ocupados para un día y amenity dados.
+/// Devuelve Map<hora, opciones_tomadas>:
+///   1 → solo primera opción tomada (segunda aún disponible)
+///   2 → ambas opciones tomadas (completamente ocupado)
 ///
 /// Copied from [occupiedSlots].
 @ProviderFor(occupiedSlots)
 const occupiedSlotsProvider = OccupiedSlotsFamily();
 
-/// Slots ocupados para un día y amenity dados
+/// Slots ocupados para un día y amenity dados.
+/// Devuelve Map<hora, opciones_tomadas>:
+///   1 → solo primera opción tomada (segunda aún disponible)
+///   2 → ambas opciones tomadas (completamente ocupado)
 ///
 /// Copied from [occupiedSlots].
-class OccupiedSlotsFamily extends Family<AsyncValue<List<int>>> {
-  /// Slots ocupados para un día y amenity dados
+class OccupiedSlotsFamily extends Family<AsyncValue<Map<int, int>>> {
+  /// Slots ocupados para un día y amenity dados.
+  /// Devuelve Map<hora, opciones_tomadas>:
+  ///   1 → solo primera opción tomada (segunda aún disponible)
+  ///   2 → ambas opciones tomadas (completamente ocupado)
   ///
   /// Copied from [occupiedSlots].
   const OccupiedSlotsFamily();
 
-  /// Slots ocupados para un día y amenity dados
+  /// Slots ocupados para un día y amenity dados.
+  /// Devuelve Map<hora, opciones_tomadas>:
+  ///   1 → solo primera opción tomada (segunda aún disponible)
+  ///   2 → ambas opciones tomadas (completamente ocupado)
   ///
   /// Copied from [occupiedSlots].
   OccupiedSlotsProvider call({
@@ -240,11 +252,17 @@ class OccupiedSlotsFamily extends Family<AsyncValue<List<int>>> {
   String? get name => r'occupiedSlotsProvider';
 }
 
-/// Slots ocupados para un día y amenity dados
+/// Slots ocupados para un día y amenity dados.
+/// Devuelve Map<hora, opciones_tomadas>:
+///   1 → solo primera opción tomada (segunda aún disponible)
+///   2 → ambas opciones tomadas (completamente ocupado)
 ///
 /// Copied from [occupiedSlots].
-class OccupiedSlotsProvider extends AutoDisposeFutureProvider<List<int>> {
-  /// Slots ocupados para un día y amenity dados
+class OccupiedSlotsProvider extends AutoDisposeFutureProvider<Map<int, int>> {
+  /// Slots ocupados para un día y amenity dados.
+  /// Devuelve Map<hora, opciones_tomadas>:
+  ///   1 → solo primera opción tomada (segunda aún disponible)
+  ///   2 → ambas opciones tomadas (completamente ocupado)
   ///
   /// Copied from [occupiedSlots].
   OccupiedSlotsProvider({required String amenityId, required DateTime date})
@@ -283,7 +301,7 @@ class OccupiedSlotsProvider extends AutoDisposeFutureProvider<List<int>> {
 
   @override
   Override overrideWith(
-    FutureOr<List<int>> Function(OccupiedSlotsRef provider) create,
+    FutureOr<Map<int, int>> Function(OccupiedSlotsRef provider) create,
   ) {
     return ProviderOverride(
       origin: this,
@@ -301,7 +319,7 @@ class OccupiedSlotsProvider extends AutoDisposeFutureProvider<List<int>> {
   }
 
   @override
-  AutoDisposeFutureProviderElement<List<int>> createElement() {
+  AutoDisposeFutureProviderElement<Map<int, int>> createElement() {
     return _OccupiedSlotsProviderElement(this);
   }
 
@@ -324,7 +342,7 @@ class OccupiedSlotsProvider extends AutoDisposeFutureProvider<List<int>> {
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin OccupiedSlotsRef on AutoDisposeFutureProviderRef<List<int>> {
+mixin OccupiedSlotsRef on AutoDisposeFutureProviderRef<Map<int, int>> {
   /// The parameter `amenityId` of this provider.
   String get amenityId;
 
@@ -333,7 +351,7 @@ mixin OccupiedSlotsRef on AutoDisposeFutureProviderRef<List<int>> {
 }
 
 class _OccupiedSlotsProviderElement
-    extends AutoDisposeFutureProviderElement<List<int>>
+    extends AutoDisposeFutureProviderElement<Map<int, int>>
     with OccupiedSlotsRef {
   _OccupiedSlotsProviderElement(super.provider);
 

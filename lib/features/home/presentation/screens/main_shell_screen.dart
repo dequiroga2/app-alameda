@@ -1,17 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/providers/shell_tab_provider.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../../booking/presentation/screens/my_reservations_screen.dart';
 import '../../../lottery/presentation/screens/lottery_screen.dart';
+import '../../../notifications/presentation/providers/notifications_provider.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
 import 'home_screen.dart';
 
-class MainShellScreen extends ConsumerWidget {
+class MainShellScreen extends ConsumerStatefulWidget {
   const MainShellScreen({super.key, required this.child});
   final Widget child;
+
+  @override
+  ConsumerState<MainShellScreen> createState() => _MainShellScreenState();
+}
+
+class _MainShellScreenState extends ConsumerState<MainShellScreen> {
+  RealtimeChannel? _channel;
 
   static const _tabs = [
     _TabItem(icon: Icons.home_rounded, label: 'Inicio'),
@@ -28,7 +40,45 @@ class MainShellScreen extends ConsumerWidget {
   ];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _setupRealtime());
+  }
+
+  Future<void> _setupRealtime() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    _channel = Supabase.instance.client
+        .channel('user-notif-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: AppConstants.tableUserNotifications,
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: user.id,
+          ),
+          callback: (payload) async {
+            final record = payload.newRecord;
+            final title = record['title'] as String? ?? '¡Buenas noticias!';
+            final body  = record['body']  as String? ?? '';
+            await NotificationService.show(title: title, body: body);
+            ref.invalidate(unreadNotificationsProvider);
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final tabIndex = ref.watch(shellTabProvider);
 
     return Scaffold(
@@ -53,19 +103,26 @@ class MainShellScreen extends ConsumerWidget {
                 return Expanded(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => ref.read(shellTabProvider.notifier).setTab(i),
+                    onTap: () =>
+                        ref.read(shellTabProvider.notifier).setTab(i),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(tab.icon, size: 24,
-                            color: on ? AppColors.accentDeep : AppColors.textFaint),
+                        Icon(tab.icon,
+                            size: 24,
+                            color: on
+                                ? AppColors.accentDeep
+                                : AppColors.textFaint),
                         const SizedBox(height: 4),
                         Text(
                           tab.label,
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 11,
-                            fontWeight: on ? FontWeight.w700 : FontWeight.w600,
-                            color: on ? AppColors.accentDeep : AppColors.textFaint,
+                            fontWeight:
+                                on ? FontWeight.w700 : FontWeight.w600,
+                            color: on
+                                ? AppColors.accentDeep
+                                : AppColors.textFaint,
                           ),
                         ),
                       ],

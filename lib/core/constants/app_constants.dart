@@ -20,6 +20,7 @@ class AppConstants {
   static const String tableAmenities = 'amenities';
   static const String tableTimeSlots = 'time_slots';
   static const String tableNotifications = 'notifications';
+  static const String tableUserNotifications = 'user_notifications';
   static const String tableLotteryEntries = 'lottery_entries';
   static const String tableLotteryDraws = 'lottery_draws';
 

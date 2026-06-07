@@ -11,6 +11,9 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../providers/reservations_provider.dart';
 
+// Estado visual de cada tile de hora
+enum _SlotState { free, secondAvailable, fullyOccupied, past }
+
 class BookingScreen extends ConsumerStatefulWidget {
   const BookingScreen({super.key, required this.amenityId});
   final String amenityId;
@@ -22,9 +25,10 @@ class BookingScreen extends ConsumerStatefulWidget {
 class _BookingScreenState extends ConsumerState<BookingScreen> {
   late DateTime _selectedDate;
   int? _selectedHour;
+  bool _selectedIsSecond = false; // ¿La hora seleccionada es 2da opción?
   bool _confirming = false;
 
-  final _amenityName = 'Cancha de tenis'; // en producción: cargado desde Supabase
+  final _amenityName = 'Cancha de tenis';
 
   @override
   void initState() {
@@ -35,11 +39,9 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   List<DateTime> get _bookableDays {
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
-    // Sáb–Dom: hasta el domingo de la PRÓXIMA semana (sorteos ya publicados)
-    // Lun–Vie: solo hasta el domingo de ESTA semana
     final daysUntilEnd = today.weekday >= DateTime.saturday
-        ? DateTime.sunday - today.weekday + 7  // sáb=8 días, dom=7 días
-        : DateTime.sunday - today.weekday;     // lun=6, mar=5 … vie=2
+        ? DateTime.sunday - today.weekday + 7
+        : DateTime.sunday - today.weekday;
     return List.generate(
       daysUntilEnd + 1,
       (i) => todayDate.add(Duration(days: i)),
@@ -72,7 +74,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       final dateStr =
           '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
 
-      // Leemos tower y apartment del perfil del usuario
       final profile = await supabase
           .from(AppConstants.tableProfiles)
           .select('tower, apartment')
@@ -89,9 +90,9 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
         'start_hour': _selectedHour,
         'end_hour': _selectedHour! + 1,
         'status': AppConstants.statusConfirmed,
+        'slot_option': _selectedIsSecond ? 2 : 1,
       });
 
-      // Fuerza recarga de reservas en home y cupo semanal
       ref.invalidate(upcomingReservationsProvider);
       ref.invalidate(weeklyReservationCountProvider);
 
@@ -101,6 +102,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
           'amenityName': _amenityName,
           'date': _selectedDate,
           'hour': _selectedHour!,
+          'isSecondOption': _selectedIsSecond,
         });
       }
     } catch (e) {
@@ -117,12 +119,11 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
-    final occupiedAsync = ref.watch(
+    final slotsAsync = ref.watch(
       occupiedSlotsProvider(amenityId: widget.amenityId, date: _selectedDate),
     );
-    final occupied = occupiedAsync.valueOrNull ?? [];
+    final slotMap = slotsAsync.valueOrNull ?? {};
 
-    // Horas pasadas: si el día seleccionado es hoy, bloquear horas <= hora actual
     final now = DateTime.now();
     final isToday = _isSameDay(_selectedDate, now);
     final pastHours = isToday
@@ -131,7 +132,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
             .toList()
         : <int>[];
 
-    // Cupo de la semana del día SELECCIONADO (no siempre la semana actual)
     final weeklyUsed = ref.watch(
       weeklyReservationCountProvider(_selectedDate),
     ).valueOrNull ?? 0;
@@ -141,7 +141,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       backgroundColor: AppColors.background,
       body: Column(
         children: [
-          // Encabezado con días
+          // ── Header con días ──────────────────────────────────────────
           Container(
             color: AppColors.surface,
             child: Column(
@@ -177,7 +177,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Chips de días — scroll horizontal
                 SizedBox(
                   height: 80,
                   child: ListView.builder(
@@ -194,6 +193,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                         onTap: () => setState(() {
                           _selectedDate = day;
                           _selectedHour = null;
+                          _selectedIsSecond = false;
                         }),
                       );
                     },
@@ -204,7 +204,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
             ),
           ),
 
-          // Grilla de horas
+          // ── Grilla de horas ──────────────────────────────────────────
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
@@ -217,7 +217,8 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                       Text(_dayLabel(_selectedDate),
                           style: AppTextStyles.titleLg),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: weeklyFull
                               ? AppColors.error.withValues(alpha: 0.1)
@@ -227,18 +228,24 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                         child: Text(
                           '$weeklyUsed/${AppConstants.weeklyReservationLimit} sem.',
                           style: AppTextStyles.labelSm.copyWith(
-                            color: weeklyFull ? AppColors.error : AppColors.accentDeep,
+                            color: weeklyFull
+                                ? AppColors.error
+                                : AppColors.accentDeep,
                             fontSize: 11,
                           ),
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  // Leyenda de colores
+                  _SlotLegend(),
                   const SizedBox(height: 14),
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       mainAxisSpacing: 10,
                       crossAxisSpacing: 10,
@@ -247,15 +254,32 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                     itemCount: _hours.length,
                     itemBuilder: (context, i) {
                       final h = _hours[i];
-                      final isPast     = pastHours.contains(h);
-                      final isOccupied = occupied.contains(h) || isPast;
-                      final isSelected = _selectedHour == h;
+                      final isPast = pastHours.contains(h);
+                      final optionsTaken = slotMap[h] ?? 0;
+
+                      final slotState = isPast
+                          ? _SlotState.past
+                          : optionsTaken >= 2
+                              ? _SlotState.fullyOccupied
+                              : optionsTaken == 1
+                                  ? _SlotState.secondAvailable
+                                  : _SlotState.free;
+
+                      final canTap = !weeklyFull &&
+                          slotState != _SlotState.past &&
+                          slotState != _SlotState.fullyOccupied;
+
                       return _HourTile(
                         hour: h,
-                        isOccupied: isOccupied,
-                        isPast: isPast,
-                        isSelected: isSelected,
-                        onTap: isOccupied ? null : () => setState(() => _selectedHour = h),
+                        slotState: slotState,
+                        isSelected: _selectedHour == h,
+                        onTap: canTap
+                            ? () => setState(() {
+                                  _selectedHour = h;
+                                  _selectedIsSecond =
+                                      slotState == _SlotState.secondAvailable;
+                                })
+                            : null,
                       );
                     },
                   ),
@@ -266,7 +290,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
         ],
       ),
 
-      // Barra inferior fija de confirmación
+      // ── Barra inferior ───────────────────────────────────────────────
       bottomSheet: Container(
         padding: EdgeInsets.fromLTRB(
             20, 12, 20, MediaQuery.of(context).padding.bottom + 12),
@@ -277,12 +301,14 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
         child: weeklyFull
             ? Row(
                 children: [
-                  const Icon(Icons.block_rounded, color: AppColors.error, size: 20),
+                  const Icon(Icons.block_rounded,
+                      color: AppColors.error, size: 20),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       _weekFullMessage(_selectedDate),
-                      style: AppTextStyles.labelSm.copyWith(color: AppColors.error),
+                      style:
+                          AppTextStyles.labelSm.copyWith(color: AppColors.error),
                     ),
                   ),
                 ],
@@ -295,24 +321,33 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text('Tu selección',
-                            style: AppTextStyles.caption.copyWith(fontSize: 12)),
-                        Text(
-                          _selectedHour != null
-                              ? '${_dayLabelShort(_selectedDate)} · ${_fmtRange(_selectedHour!)}'
-                              : 'Elige día y hora',
-                          style: AppTextStyles.titleMd.copyWith(
-                              color: _selectedHour != null
-                                  ? AppColors.textPrimary
-                                  : AppColors.textFaint),
-                        ),
+                            style: AppTextStyles.caption
+                                .copyWith(fontSize: 12)),
+                        if (_selectedHour != null && _selectedIsSecond)
+                          _SecondOptionLabel(
+                            label:
+                                '${_dayLabelShort(_selectedDate)} · ${_fmtRange(_selectedHour!)}',
+                          )
+                        else
+                          Text(
+                            _selectedHour != null
+                                ? '${_dayLabelShort(_selectedDate)} · ${_fmtRange(_selectedHour!)}'
+                                : 'Elige día y hora',
+                            style: AppTextStyles.titleMd.copyWith(
+                                color: _selectedHour != null
+                                    ? AppColors.textPrimary
+                                    : AppColors.textFaint),
+                          ),
                       ],
                     ),
                   ),
                   AppButton(
-                    label: 'Confirmar',
+                    label: _selectedIsSecond ? '2da opción' : 'Confirmar',
                     onPressed: _selectedHour != null ? _confirm : null,
                     size: AppButtonSize.lg,
-                    icon: Icons.check_rounded,
+                    icon: _selectedIsSecond
+                        ? Icons.bookmark_add_rounded
+                        : Icons.check_rounded,
                     loading: _confirming,
                   ),
                 ],
@@ -324,7 +359,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  /// Devuelve el lunes de la semana que contiene [date]
   DateTime _weekStart(DateTime date) {
     final monday = date.subtract(Duration(days: date.weekday - 1));
     return DateTime(monday.year, monday.month, monday.day);
@@ -334,12 +368,15 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final selectedMonday = _weekStart(selectedDate);
-    final currentMonday  = _weekStart(today);
+    final currentMonday = _weekStart(today);
 
     if (selectedMonday == currentMonday) {
       return 'Alcanzaste el límite de 3 reservas esta semana. El lunes abre la próxima.';
     } else {
-      const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      const months = [
+        'ene','feb','mar','abr','may','jun',
+        'jul','ago','sep','oct','nov','dic'
+      ];
       final nextSun = selectedMonday.add(const Duration(days: 6));
       return 'Ya tienes 3 reservas la semana del ${selectedMonday.day} al ${nextSun.day} de ${months[nextSun.month - 1]}.';
     }
@@ -348,22 +385,30 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   String _mapBookingError(String raw) {
     final msg = raw.toLowerCase();
     if (msg.contains('3 reservas por semana') || msg.contains('weekly')) {
-      return 'Tu unidad ya usó las 3 reservas de esta semana. Disponibles el lunes.';
+      return 'Tu unidad ya usó las 3 reservas de esta semana.';
     }
-    if (msg.contains('una reserva para esta unidad este día') || msg.contains('daily')) {
+    if (msg.contains('una reserva para esta unidad este día') ||
+        msg.contains('daily')) {
       return 'Tu unidad ya tiene una reserva para este día.';
     }
-    if (msg.contains('unique_slot') || msg.contains('unique constraint') || msg.contains('already exists')) {
-      return 'Ese horario acaba de ser tomado por otro residente. Elige otra hora.';
+    if (msg.contains('unique_slot') ||
+        msg.contains('unique constraint') ||
+        msg.contains('already exists')) {
+      return 'Ese horario acaba de ser tomado. Elige otra hora.';
     }
-    if (msg.contains('network') || msg.contains('socket') || msg.contains('connection')) {
+    if (msg.contains('network') ||
+        msg.contains('socket') ||
+        msg.contains('connection')) {
       return 'Sin conexión. Verifica tu internet e intenta de nuevo.';
     }
     return 'No se pudo confirmar la reserva. Intenta de nuevo.';
   }
 
   String _dayLabel(DateTime d) {
-    const days = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    const days = [
+      'domingo', 'lunes', 'martes', 'miércoles',
+      'jueves', 'viernes', 'sábado'
+    ];
     final today = DateTime.now();
     if (_isSameDay(d, today)) return 'Hoy';
     if (_isSameDay(d, today.add(const Duration(days: 1)))) return 'Mañana';
@@ -386,7 +431,80 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   }
 }
 
-// ── Widgets locales ────────────────────────────────────────────────────
+// ── Leyenda ───────────────────────────────────────────────────────────────────
+
+class _SlotLegend extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _LegendDot(color: AppColors.accentStrong, label: 'Disponible'),
+        const SizedBox(width: 14),
+        _LegendDot(color: AppColors.warning, label: '2ª opción libre'),
+        const SizedBox(width: 14),
+        _LegendDot(color: AppColors.textFaint, label: 'Ocupado'),
+      ],
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8, height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(label,
+            style: AppTextStyles.caption.copyWith(
+                color: AppColors.textFaint, fontSize: 11)),
+      ],
+    );
+  }
+}
+
+// ── Label 2da opción en bottom bar ────────────────────────────────────────────
+
+class _SecondOptionLabel extends StatelessWidget {
+  const _SecondOptionLabel({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppColors.warning.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            '2ª opción',
+            style: AppTextStyles.labelSm.copyWith(
+              color: AppColors.warning,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: AppTextStyles.titleMd),
+      ],
+    );
+  }
+}
+
+// ── Widgets locales ───────────────────────────────────────────────────────────
 
 class _DayChip extends StatelessWidget {
   const _DayChip({
@@ -404,8 +522,12 @@ class _DayChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const days = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
-    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-    final topLabel = index == 0 ? 'Hoy' : index == 1 ? 'Mañ.' : days[date.weekday % 7];
+    const months = [
+      'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+      'jul', 'ago', 'sep', 'oct', 'nov', 'dic'
+    ];
+    final topLabel =
+        index == 0 ? 'Hoy' : index == 1 ? 'Mañ.' : days[date.weekday % 7];
 
     return GestureDetector(
       onTap: onTap,
@@ -429,7 +551,9 @@ class _DayChip extends StatelessWidget {
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: isSelected ? Colors.white.withValues(alpha: 0.85) : AppColors.textFaint,
+                color: isSelected
+                    ? Colors.white.withValues(alpha: 0.85)
+                    : AppColors.textFaint,
               ),
             ),
             const SizedBox(height: 2),
@@ -446,7 +570,9 @@ class _DayChip extends StatelessWidget {
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 9,
                 fontWeight: FontWeight.w700,
-                color: isSelected ? Colors.white.withValues(alpha: 0.8) : AppColors.textFaint,
+                color: isSelected
+                    ? Colors.white.withValues(alpha: 0.8)
+                    : AppColors.textFaint,
               ),
             ),
           ],
@@ -459,15 +585,13 @@ class _DayChip extends StatelessWidget {
 class _HourTile extends StatelessWidget {
   const _HourTile({
     required this.hour,
-    required this.isOccupied,
+    required this.slotState,
     required this.isSelected,
-    this.isPast = false,
     this.onTap,
   });
 
   final int hour;
-  final bool isOccupied;
-  final bool isPast;
+  final _SlotState slotState;
   final bool isSelected;
   final VoidCallback? onTap;
 
@@ -479,19 +603,48 @@ class _HourTile extends StatelessWidget {
       return '$h12:00 $ampm';
     }
 
-    final bg = isSelected
-        ? AppColors.accentStrong
-        : isOccupied
-            ? AppColors.background
-            : AppColors.surface;
-    final fgStrong = isSelected
-        ? Colors.white
-        : isOccupied
-            ? AppColors.textFaint
-            : AppColors.textPrimary;
-    final fgSoft = isSelected
-        ? Colors.white.withValues(alpha: 0.8)
-        : AppColors.textFaint;
+    final Color bg;
+    final Color fgStrong;
+    final Color fgSoft;
+    final String subLabel;
+    final Color borderColor;
+
+    if (isSelected) {
+      // Seleccionado como 2da opción
+      final isSecond = slotState == _SlotState.secondAvailable;
+      bg = isSecond ? AppColors.warning : AppColors.accentStrong;
+      fgStrong = Colors.white;
+      fgSoft = Colors.white.withValues(alpha: 0.85);
+      subLabel = isSecond ? '2da opción ✓' : 'Seleccionado';
+      borderColor = bg;
+    } else {
+      switch (slotState) {
+        case _SlotState.free:
+          bg = AppColors.surface;
+          fgStrong = AppColors.textPrimary;
+          fgSoft = AppColors.textFaint;
+          subLabel = 'hasta ${fmt(hour + 1).replaceAll(' a.m.', '').replaceAll(' p.m.', '')}';
+          borderColor = AppColors.hair;
+        case _SlotState.secondAvailable:
+          bg = AppColors.warning.withValues(alpha: 0.08);
+          fgStrong = AppColors.warning;
+          fgSoft = AppColors.warning.withValues(alpha: 0.75);
+          subLabel = '2ª opción libre';
+          borderColor = AppColors.warning.withValues(alpha: 0.35);
+        case _SlotState.fullyOccupied:
+          bg = AppColors.background;
+          fgStrong = AppColors.textFaint;
+          fgSoft = AppColors.textFaint;
+          subLabel = 'Ocupado';
+          borderColor = AppColors.hair;
+        case _SlotState.past:
+          bg = AppColors.background;
+          fgStrong = AppColors.textFaint;
+          fgSoft = AppColors.textFaint;
+          subLabel = 'Pasado';
+          borderColor = AppColors.hair;
+      }
+    }
 
     return GestureDetector(
       onTap: onTap,
@@ -502,8 +655,8 @@ class _HourTile extends StatelessWidget {
           color: bg,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected ? AppColors.accentStrong : AppColors.hair,
-            width: 1.5,
+            color: borderColor,
+            width: isSelected ? 2 : 1.5,
           ),
         ),
         child: Column(
@@ -520,7 +673,7 @@ class _HourTile extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              isPast ? 'Pasado' : isOccupied ? 'Ocupado' : 'hasta ${fmt(hour + 1).replaceAll(' a.m.', '').replaceAll(' p.m.', '')}',
+              subLabel,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,

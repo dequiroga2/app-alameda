@@ -45,5 +45,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>La Alameda te notifica cuando tu segunda opción de reserva se confirma.</string>
 </dict>
 </plist>
