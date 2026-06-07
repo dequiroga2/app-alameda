@@ -57,16 +57,31 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
           table: AppConstants.tableUserNotifications,
           // Sin filtro server-side — verificamos user_id en el cliente.
           // Más confiable que el filtro de columna que requiere REPLICA IDENTITY FULL.
-          callback: (payload) async {
-            final record = payload.newRecord;
-            // Ignorar notificaciones de otros usuarios
-            final notifUserId = record['user_id'] as String?;
-            if (notifUserId != user.id) return;
+          callback: (_) async {
+            // El payload puede venir vacío sin REPLICA IDENTITY FULL.
+            // Hacemos un query directo — RLS garantiza que solo vemos
+            // las notificaciones del usuario autenticado.
+            try {
+              final rows = await Supabase.instance.client
+                  .from(AppConstants.tableUserNotifications)
+                  .select()
+                  .eq('user_id', user.id)
+                  .eq('read', false)
+                  .order('created_at', ascending: false)
+                  .limit(5);
 
-            final title = record['title'] as String? ?? '¡Buenas noticias!';
-            final body  = record['body']  as String? ?? '';
-            await NotificationService.show(title: title, body: body);
-            ref.invalidate(unreadNotificationsProvider);
+              for (final notif in (rows as List)) {
+                final title = notif['title'] as String? ?? '¡Buenas noticias!';
+                final body  = notif['body']  as String? ?? '';
+                await NotificationService.show(title: title, body: body);
+                // Marcar como leída para no mostrarla de nuevo
+                await Supabase.instance.client
+                    .from(AppConstants.tableUserNotifications)
+                    .update({'read': true})
+                    .eq('id', notif['id'] as String);
+              }
+              ref.invalidate(unreadNotificationsProvider);
+            } catch (_) {}
           },
         )
         .subscribe();
